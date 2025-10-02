@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(python:*)",
+      "Bash(for file in manifest.json background/background.js sidepanel/sidepanel.html sidepanel/sidepanel.js sidepanel/sidepanel.css content/content.js content/highlight.css assets/logo.svg icons/icon16.png)",
+      "Bash(do if [ -f \"$file\" ])",
+      "Bash(then echo \"✓ $file\")",
+      "Bash(else echo \"✗ $file\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(for file in manifest.json background/background.js sidepanel/sidepanel.js content/content.js)",
+      "Bash(mkdir:*)",
+      "Bash(for file in manifest.json background/background.js sidepanel/sidepanel.html sidepanel/sidepanel.js content/content.js content/highlight.css assets/logo.svg icons/icon16.png)",
+      "Bash(for file in manifest.json background/background.js sidepanel/sidepanel.js content/content.js services/highlighter.js styles/highlights.css)",
+      "Bash(npm run build:*)",
+      "Bash(find:*)",
+      "Bash(for file in sidepanel/sidepanel.html sidepanel/sidepanel.js settings/settings.js content/content.js services/biasAnalyzer.js)",
+      "Bash(then echo \"✓ $file exists\")",
+      "Bash(else echo \"✗ $file missing\")",
+      "Bash(xxd:*)",
+      "Bash(for file in services/biasAnalyzer.js services/credibilityAnalyzer.js settings/settings.html help/help.html)",
+      "Bash(for file in content/contentExtractor.js services/biasLayers.js services/contextAnalyzer.js services/highlighter.js)",
+      "Bash(for file in sidepanel/sidepanel.html sidepanel/sidepanel.js settings/settings.html content/content.js services/biasAnalyzer.js help/help.html)",
+      "Bash(dir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

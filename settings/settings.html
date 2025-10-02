@@ -1,0 +1,112 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BiasNeutralizer Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="panel-container settings-container">
+    <div class="settings-top-row">
+      <button class="back-link" type="button" id="back-button">
+        <span class="back-icon">←</span>
+        <span>Back</span>
+      </button>
+      <div class="settings-title">
+        <h1 class="product-name">
+          <span class="bias">Bias</span><span class="neutralizer">Neutralizer</span>
+        </h1>
+        <p class="subtitle">Configure your BiasNeutralizer experience</p>
+      </div>
+      <div class="header-icon">
+        <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <div class="card-background"></div>
+      <div class="card-content settings-card-content">
+        <nav class="tab-bar" role="tablist" aria-label="Settings tabs">
+          <button class="tab-button active" role="tab" aria-selected="true" aria-controls="api-panel" id="tab-api" data-tab="api">API</button>
+          <button class="tab-button" role="tab" aria-selected="false" aria-controls="advanced-panel" id="tab-advanced" data-tab="advanced">Advanced</button>
+        </nav>
+
+        <section class="tab-panel active" role="tabpanel" id="api-panel" aria-labelledby="tab-api" data-tab="api">
+          <h2 class="section-title">Cloud API Configuration</h2>
+          <label class="input-label" for="gemini-api-key">Gemini API Key</label>
+          <div class="input-wrapper">
+            <input type="text" id="gemini-api-key" placeholder="Paste your Gemini API key" autocomplete="off" />
+          </div>
+
+          <div class="connection-status" aria-live="polite">
+            <span class="status-label">Connection Status:</span>
+            <span class="status-indicator status-indicator--disconnected" id="connection-status-indicator" aria-hidden="true"></span>
+            <span class="status-text" id="connection-status-text">Not connected</span>
+          </div>
+
+          <div class="settings-actions">
+            <button class="primary-button" type="button" id="test-connection">Test Connection</button>
+            <button class="primary-button" type="button" id="save-api-key">Save API Key</button>
+          </div>
+          <p class="form-feedback" id="api-feedback" role="status"></p>
+        </section>
+
+        <section class="tab-panel" role="tabpanel" id="advanced-panel" aria-labelledby="tab-advanced" data-tab="advanced">
+          <div class="tab-section">
+            <h2 class="section-title">Bias Detection</h2>
+            <div class="radio-group" role="radiogroup" aria-label="Bias detection level">
+              <label class="radio-option">
+                <input type="radio" name="bias-detection" value="low" />
+                <span>Low</span>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="bias-detection" value="medium" checked />
+                <span>Medium</span>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="bias-detection" value="high" />
+                <span>High</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="tab-section">
+            <h2 class="section-title">Analysis Depth</h2>
+            <div class="radio-group" role="radiogroup" aria-label="Analysis depth">
+              <label class="radio-option">
+                <input type="radio" name="analysis-depth" value="quick" checked />
+                <span>Quick scan</span>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="analysis-depth" value="deep" />
+                <span>Deep analysis</span>
+              </label>
+            </div>
+            <div id="thinking-toggle-container" class="thinking-toggle-container">
+              <div class="settings-toggle-row">
+                <label for="enable-thinking-toggle" class="status-label">Enable "Thinking" (Cloud AI Only)</label>
+                <div class="toggle" id="enable-thinking-toggle">
+                  <div class="toggle-knob"></div>
+                </div>
+              </div>
+              <p class="setting-description">Allows the cloud AI to use an extended reasoning process for potentially more nuanced results. May increase latency.</p>
+            </div>
+          </div>
+
+          <div class="advanced-footer">
+            <button class="primary-button full-width" type="button" id="apply-changes">Apply Changes</button>
+            <p class="form-feedback" id="advanced-feedback" role="status"></p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BiasNeutralizer • Results</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+  <link rel="stylesheet" href="results.css" />
+  <link rel="icon" href="../icons/icon32.png" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0F172A" />
+  <style>html,body{height:100%}</style>
+  
+</head>
+<body>
+  <div class="panel-container results-container">
+    <div class="results-top-row">
+      <button class="back-link" type="button" id="open-sidepanel">
+        <span class="back-icon">←</span>
+        <span>Open Side Panel</span>
+      </button>
+      <div class="results-title">
+        <h1 class="product-name">
+          <span class="bias">Bias</span><span class="neutralizer">Neutralizer</span>
+        </h1>
+        <p class="subtitle">Latest analysis results</p>
+      </div>
+      <div class="header-icon">
+        <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
+      </div>
+    </div>
+
+    <div class="bias-hero initially-hidden">
+      <div class="bias-rating" id="bias-rating">—</div>
+      <div class="bias-confidence" id="bias-confidence">—</div>
+    </div>
+
+    <div id="on-device-warning" class="on-device-warning">
+      <span class="warning-icon">⚠️</span>
+      <span class="warning-text">This analysis was performed on-device. For the highest accuracy, use the more powerful cloud-based AI.</span>
+    </div>
+
+    <div class="results-card">
+      <div class="card-background"></div>
+      <div class="card-content results-card-content">
+        <header class="report-header">
+          <div class="report-meta">
+            <a id="article-title" class="article-title" href="#" target="_blank" rel="noopener">No analysis yet</a>
+            <div class="article-submeta">
+              <span id="article-domain">—</span>
+              <span aria-hidden="true">•</span>
+              <time id="analysis-time">—</time>
+              <span class="source-chip" id="analysis-source" hidden>—</span>
+            </div>
+          </div>
+          <div class="report-actions">
+            <button class="primary-button" id="open-article" disabled>Open Article</button>
+            <button class="primary-button" id="refresh-results">Refresh</button>
+          </div>
+        </header>
+
+        <section class="report-section">
+          <h2 class="section-title">Summary</h2>
+          <p class="section-content" id="summary-text">Run a scan from the side panel to see results here.</p>
+        </section>
+
+        <section class="report-section" id="details-section" hidden>
+          <h2 class="section-title">Details</h2>
+          <div class="section-content" id="details-content">
+            <em>No detailed breakdown available.</em>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="results.js" type="module"></script>
+</body>
+</html>
