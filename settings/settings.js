@@ -9,8 +9,7 @@
     apiConnectionStatus: 'disconnected',
     apiConnectionMessage: 'Not connected',
     biasDetectionLevel: 'medium',
-    analysisDepth: 'quick',
-    enableThinking: false
+    analysisDepth: 'quick'
   };
 
   const elements = {};
@@ -98,8 +97,6 @@
     elements.applyButton = document.getElementById('apply-changes');
     elements.advancedFeedback = document.getElementById('advanced-feedback');
     elements.backButton = document.getElementById('back-button');
-    elements.thinkingToggleContainer = document.getElementById('thinking-toggle-container');
-    elements.enableThinkingToggle = document.getElementById('enable-thinking-toggle');
   }
 
   function bindEvents() {
@@ -128,10 +125,6 @@
       radio.addEventListener('change', handleAnalysisSelection);
     });
 
-    if (elements.enableThinkingToggle) {
-      elements.enableThinkingToggle.addEventListener('click', handleThinkingToggle);
-    }
-
     if (elements.applyButton) {
       elements.applyButton.addEventListener('click', handleApplyChanges);
     }
@@ -148,8 +141,7 @@
         'apiConnectionStatus',
         'apiConnectionMessage',
         'biasDetectionLevel',
-        'analysisDepth',
-        'enableThinking'
+        'analysisDepth'
       ]);
 
       const storedApiKey = typeof stored.geminiApiKey === 'string' ? stored.geminiApiKey : '';
@@ -162,16 +154,9 @@
 
       state.biasDetectionLevel = stored.biasDetectionLevel || state.biasDetectionLevel;
       state.analysisDepth = stored.analysisDepth || state.analysisDepth;
-      state.enableThinking = stored.enableThinking !== undefined ? stored.enableThinking : false;
-      
+
       syncRadioGroup(elements.biasRadios, state.biasDetectionLevel);
       syncRadioGroup(elements.analysisRadios, state.analysisDepth);
-      
-      if (elements.enableThinkingToggle) {
-        elements.enableThinkingToggle.classList.toggle('on', state.enableThinking);
-      }
-      
-      updateThinkingToggleVisibility();
 
       const hasStoredStatus = storedApiKey && stored.apiConnectionStatus;
       if (hasStoredStatus) {
@@ -253,7 +238,7 @@
       };
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {
@@ -404,31 +389,7 @@
     }
   }
 
-  function updateThinkingToggleVisibility() {
-    if (!elements.thinkingToggleContainer) {
-      return;
-    }
-
-    if (state.analysisDepth === 'deep') {
-      elements.thinkingToggleContainer.classList.add('hidden');
-      state.enableThinking = true;
-      if (elements.enableThinkingToggle) {
-        elements.enableThinkingToggle.classList.add('on');
-      }
-    } else {
-      elements.thinkingToggleContainer.classList.remove('hidden');
-    }
-  }
-
-  function handleThinkingToggle() {
-    if (!elements.enableThinkingToggle) {
-      return;
-    }
-
-    state.enableThinking = !state.enableThinking;
-    elements.enableThinkingToggle.classList.toggle('on', state.enableThinking);
-    showFeedback(elements.advancedFeedback, '');
-  }
+  // Thinking toggle removed
 
   function handleBiasSelection(event) {
     state.biasDetectionLevel = event.target.value;
@@ -437,7 +398,6 @@
 
   function handleAnalysisSelection(event) {
     state.analysisDepth = event.target.value;
-    updateThinkingToggleVisibility();
     showFeedback(elements.advancedFeedback, '');
   }
 
@@ -446,13 +406,10 @@
     flashButton(button);
     const finish = setButtonWorking(button, 'Applying...');
 
-    updateThinkingToggleVisibility();
-
     try {
       await storage.set({
         biasDetectionLevel: state.biasDetectionLevel,
-        analysisDepth: state.analysisDepth,
-        enableThinking: state.enableThinking
+        analysisDepth: state.analysisDepth
       });
       showFeedback(elements.advancedFeedback, 'Preferences applied.', 'success');
       finish('Applied!', 1400);

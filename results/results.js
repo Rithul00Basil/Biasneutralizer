@@ -35,9 +35,9 @@
     els.domain = document.getElementById('article-domain');
     els.time = document.getElementById('analysis-time');
     els.source = document.getElementById('analysis-source');
-    els.summary = document.getElementById('summary-text');
-    els.details = document.getElementById('details-content');
-    els.detailsSection = document.getElementById('details-section');
+    els.keyFindings = document.getElementById('key-findings-content');
+    els.loadedLanguage = document.getElementById('loaded-language-content');
+    els.balancedElements = document.getElementById('balanced-elements-content');
     els.openArticle = document.getElementById('open-article');
     els.refresh = document.getElementById('refresh-results');
     els.openSidepanel = document.getElementById('open-sidepanel');
@@ -78,9 +78,10 @@
     els.domain.textContent = '—';
     els.time.textContent = '—';
     els.source.hidden = true;
-    els.summary.textContent = 'No analysis has been run yet. Open the side panel to start a scan.';
+    els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
+    els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
+    els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
     els.openArticle.disabled = true;
-    els.detailsSection.hidden = true;
     if (els.onDeviceWarning) {
       els.onDeviceWarning.classList.remove('visible');
     }
@@ -118,7 +119,8 @@
     console.log('[BiasNeutralizer Results] Final summaryText:', summaryText);
     console.log('[BiasNeutralizer Results] Final summaryText length:', summaryText?.length);
     
-    safeRenderAnalysis(els.summary, summaryText);
+    // Parse and render the analysis into separate cards
+    parseAndRenderAnalysis(summaryText, raw);
 
     // Show the Bias Hero section and update bias rating display
     const biasHeroEl = document.querySelector('.bias-hero');
@@ -132,20 +134,30 @@
     if (confidenceEl) confidenceEl.textContent = `Confidence: ${extracted.confidence}`;
     els.openArticle.disabled = !url;
 
-    // Show on-device warning if analysis was done locally
+    // Show neutral on-device prompt only when it makes sense
     if (els.onDeviceWarning) {
-      if (source === 'private' || source === 'on-device') {
-        els.onDeviceWarning.classList.add('visible');
-      } else {
-        els.onDeviceWarning.classList.remove('visible');
-      }
+      const suggest = shouldSuggestDeep(raw, source, summaryText);
+      els.onDeviceWarning.classList.toggle('visible', suggest);
     }
 
-    if (raw && typeof raw === 'object') {
-      els.details.innerHTML = `<pre style="white-space:pre-wrap;word-break:break-word;margin:0">${escapeHtml(JSON.stringify(raw, null, 2))}</pre>`;
-      els.detailsSection.hidden = false;
-    } else {
-      els.detailsSection.hidden = true;
+  }
+
+  function shouldSuggestDeep(raw, source, summaryText) {
+    // Only suggest when current analysis was on-device/private
+    const isPrivate = source === 'private' || source === 'on-device' || !source;
+    if (!isPrivate) return false;
+
+    try {
+      const len = Number(raw?.contentLength || 0);
+      const paras = Number(raw?.paragraphCount || 0);
+      // Heuristics for "long/complex"
+      const isLong = len >= 4000 || paras >= 18;
+      // If the summary mentions comparison or multiple sources, treat as complex
+      const s = (summaryText || '').toLowerCase();
+      const mentionsCompare = /compare|comparison|multiple sources|cross-check|multi-source/.test(s);
+      return isLong || mentionsCompare;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -226,6 +238,14 @@
   }
 
   function extractBiasRating(text) {
+    // Type guard: handle null/undefined/non-string
+    if (!text || typeof text !== 'string') {
+      return {
+        rating: 'Unknown',
+        confidence: 'Unknown'
+      };
+    }
+    
     // Parse both old style ("Rating:") and bracketed labels ("[RATING]:")
     const ratingMatch = text.match(/\[?Rating\]?:?\s*(Left(-|\s)Leaning|CenterLeft|Center|Center-Right|Right(-|\s)Leaning)/i)
       || text.match(/\[RATING\]\s*:\s*([^\n]+)/i);
@@ -238,7 +258,174 @@
     };
   }
 
-  // Safely render analysis text by building DOM nodes (prevents HTML injection)
+  // Parse analysis text into sections and populate cards
+  function parseAndRenderAnalysis(text, raw) {
+    const sections = parseAnalysisSections(text);
+    
+    // Populate Key Findings card
+    if (sections.keyFindings && sections.keyFindings.length > 0) {
+      renderBulletList(els.keyFindings, sections.keyFindings);
+    } else {
+      els.keyFindings.innerHTML = '<p class="placeholder-text">No data available</p>';
+    }
+    
+    // Populate Loaded Language card
+    if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
+      renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
+    } else {
+      els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
+    }
+    
+    // Populate Balanced Elements card
+    if (sections.balancedElements && sections.balancedElements.length > 0) {
+      renderBulletList(els.balancedElements, sections.balancedElements);
+    } else {
+      els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
+    }
+  }
+
+  // Parse the analysis text into structured sections
+  function parseAnalysisSections(text) {
+    if (!text || typeof text !== 'string') {
+      return { keyFindings: [], loadedLanguage: [], balancedElements: [] };
+    }
+
+    const sections = {
+      keyFindings: [],
+      loadedLanguage: [],
+      balancedElements: []
+    };
+
+    // Split text into lines and find section headers
+    const lines = text.split('\n');
+    let currentSection = null;
+    let currentItems = [];
+
+    const sectionHeaders = {
+      'KEY FINDINGS': 'keyFindings',
+      'LOADED LANGUAGE': 'loadedLanguage',
+      'LOADED LANGUAGE EXAMPLES': 'loadedLanguage',
+      'BALANCED ELEMENTS': 'balancedElements',
+      'OVERALL BIAS ASSESSMENT': null,
+      'METHODOLOGY NOTE': null,
+      'IMPORTANT RULES': null
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Check if this line is a section header
+      const headerMatch = Object.keys(sectionHeaders).find(h => 
+        trimmed.toUpperCase().startsWith(h) || 
+        trimmed.toUpperCase() === h ||
+        trimmed.match(new RegExp(`^###?\\s*${h}`, 'i'))
+      );
+      
+      if (headerMatch) {
+        // Save previous section
+        if (currentSection && currentItems.length > 0) {
+          sections[currentSection] = currentItems;
+        }
+        // Start new section
+        currentSection = sectionHeaders[headerMatch];
+        currentItems = [];
+        continue;
+      }
+      
+      // If we're in a tracked section, collect bullet items or paragraphs
+      if (currentSection) {
+        // Match bullet points
+        const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
+        if (bulletMatch) {
+          currentItems.push(bulletMatch[1].trim());
+        } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
+          // Include non-empty, non-separator lines as items if they're substantial
+          if (trimmed.length > 20 && !trimmed.match(/^(Rating|Confidence):/i)) {
+            currentItems.push(trimmed);
+          }
+        }
+      }
+    }
+    
+    // Save final section
+    if (currentSection && currentItems.length > 0) {
+      sections[currentSection] = currentItems;
+    }
+
+    return sections;
+  }
+
+  // Render a bullet list in a container
+  function renderBulletList(container, items) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    
+    const ul = document.createElement('ul');
+    items.forEach(item => {
+      const li = document.createElement('li');
+      li.textContent = item;
+      ul.appendChild(li);
+    });
+    
+    container.appendChild(ul);
+  }
+
+  // Render loaded language examples with special formatting
+  function renderLoadedLanguageExamples(container, items, raw) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    
+    // Try to extract more detailed language analysis from raw data if available
+    let examples = [];
+    
+    if (raw && raw.languageAnalysis && Array.isArray(raw.languageAnalysis)) {
+      examples = raw.languageAnalysis.slice(0, 5);
+    } else {
+      // Use the parsed items as simple examples
+      examples = items.slice(0, 5).map(item => {
+        // Try to parse "phrase" → explanation format
+        const arrowMatch = item.match(/["'](.+?)["']\s*[→-]\s*(.+)/);
+        if (arrowMatch) {
+          return {
+            phrase: arrowMatch[1],
+            explanation: arrowMatch[2]
+          };
+        }
+        return { phrase: item, explanation: '' };
+      });
+    }
+    
+    if (examples.length === 0) {
+      container.innerHTML = '<p class="placeholder-text">No data available</p>';
+      return;
+    }
+    
+    examples.forEach(ex => {
+      const exampleDiv = document.createElement('div');
+      exampleDiv.className = 'language-example';
+      
+      const phraseDiv = document.createElement('div');
+      phraseDiv.className = 'language-phrase';
+      phraseDiv.textContent = `"${ex.phrase || ex}"`;
+      exampleDiv.appendChild(phraseDiv);
+      
+      if (ex.explanation) {
+        const explanationDiv = document.createElement('div');
+        explanationDiv.className = 'language-explanation';
+        explanationDiv.textContent = ex.explanation;
+        exampleDiv.appendChild(explanationDiv);
+      }
+      
+      if (ex.direction) {
+        const directionSpan = document.createElement('span');
+        directionSpan.className = 'language-direction';
+        directionSpan.textContent = ex.direction;
+        exampleDiv.appendChild(directionSpan);
+      }
+      
+      container.appendChild(exampleDiv);
+    });
+  }
+
+  // Legacy: Safely render analysis text by building DOM nodes (prevents HTML injection)
   function safeRenderAnalysis(container, text) {
     console.log('[BiasNeutralizer Results] ===== RENDERING TEXT =====');
     console.log('[BiasNeutralizer Results] text type:', typeof text);

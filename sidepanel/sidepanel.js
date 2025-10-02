@@ -359,15 +359,16 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // PHASE 1: Context Agent with Quote Detection
       console.log("Phase 1: Context Agent...");
-      const contextPrompt = `You are a content classifier. Analyze the text below.
+      const contextPrompt = `Do NOT assume bias. Classify objectively.
 
-OUTPUT FORMAT:
-TYPE: [News/Opinion/Analysis/Satire/Academic]
-SUMMARY: [10 words exactly]
-TONE: [Neutral/Emotional/Analytical]
-QUOTE_RATIO: [Low/Medium/High - what % is direct quotes vs narrative?]
+TYPE: News/Opinion/Analysis/Satire/Academic/Other/Unknown
+SUMMARY: [exactly ten words]
+TONE: Neutral/Emotional/Analytical/Mixed
+QUOTE_RATIO: Low/Medium/High (0-30%/31-60%/61-100%)
+QUOTE_PERCENTAGE: [0-100]
+CONFIDENCE: High/Medium/Low
 
-ARTICLE TEXT:
+TEXT:
 ${textToSend}`;
 
       const contextResponse = await state.currentSession.prompt(contextPrompt);
@@ -390,18 +391,17 @@ ${textToSend}`;
       // Agent 1: Quote Attribution
   const quotePrompt = `Context: ${contextData}
 
-Your ONLY job: Find direct quotes (text inside "quotation marks" or after attribution like "X said").
+Extract ONLY direct quotes (no paraphrases).
 
-EXAMPLES OF QUOTES:
-- Trump said "this is terrible" ← QUOTE
-- "We must act now," she stated ← QUOTE
-- Critics argue ← NOT A QUOTE (paraphrasing)
+Format per quote:
+- "QUOTE": "exact text"
+  SPEAKER: name/Unknown
+  SOURCE_BIAS_CUES: term1, term2 (if quote contains loaded language)
+  ATTRIBUTION: Neutral/Endorsing/Skeptical/Balancing
+  COUNTERED: true/false (does narrative counter it?)
 
-Find 2-3 EXACT quotes:
-Format:
-- "exact quote": [Who said it - reflects THEIR view, not the article's]
-
-If NO quotes: "No significant quotes found."
+If none: "No direct quotes found."
+CONFIDENCE: High/Medium/Low
 
 TEXT:
 ${textToSend}`;
@@ -409,17 +409,17 @@ ${textToSend}`;
       // Agent 2: Language Decoder (NARRATIVE ONLY)
   const languagePrompt = `Context: ${contextData}
 
-Find 2-3 loaded/emotional words in NARRATIVE ONLY (reporter's voice).
-
-IGNORE anything in "quotation marks" - that's someone speaking.
-
-EXAMPLES:
-✓ ANALYZE: "The controversial policy sparked outrage" ← reporter's words
-✗ SKIP: Trump said "this sparked outrage" ← Trump's words
+Narrative only. Ignore quotes. Flag value-laden wording; skip precise/legal terms.
 
 Format:
-- "exact phrase from narrative": explanation
-Neutrality: X/10
+- PHRASE: "exact phrase"
+  WHY: brief reason
+  NEUTRAL_ALT: alternative wording
+  CONTEXT: short surrounding text
+
+NEUTRALITY: [0-10]
+CONFIDENCE: High/Medium/Low
+SUMMARY: one sentence
 
 TEXT:
 ${textToSend}`;
@@ -427,13 +427,19 @@ ${textToSend}`;
       // Agent 3: Bias Hunter (NARRATIVE ONLY)
       const hunterPrompt = `Context: ${contextData}
 
-Find 2-3 bias indicators in the NARRATIVE.
-
-CRITICAL: If something is in quotes, that's the SPEAKER's bias, not the article's.
-Only flag the REPORTER's choices.
+Narrative only. Do NOT assume bias. Flag only if listed criteria met. Need ≥2 indicators or 1 High-strength.
 
 Format:
-- Type: "exact phrase" - explanation
+- TYPE: Framing/Sourcing/Language/Causality/Editorial
+  EXAMPLE: "exact text/structure"
+  WHY: reason tied to criteria
+  STRENGTH: Low/Medium/High
+  EVIDENCE: para/position
+
+OVERALL_BIAS: Strong Left/Lean Left/Center/Lean Right/Strong Right/Unclear
+CONFIDENCE: High/Medium/Low
+
+Default to Center/Unclear if insufficient evidence.
 
 TEXT:
 ${textToSend}`;
@@ -441,10 +447,16 @@ ${textToSend}`;
       // Agent 4: Bias Skeptic
       const skepticPrompt = `Context: ${contextData}
 
-Find 2-3 neutral/factual elements in the narrative.
+Credit genuine balance; avoid forced symmetry. No "both sides" if one is fringe.
 
 Format:
-- "exact quote": why balanced
+- TYPE: Sourcing/Attribution/Context/Nuance/Transparency
+  EXAMPLE: "text"
+  WHY: reason
+
+BALANCE_SCORE: 0-10
+CONFIDENCE: High/Medium/Low
+STRENGTHS: one sentence
 
 TEXT:
 ${textToSend}`;
@@ -466,9 +478,96 @@ ${textToSend}`;
       console.log("--- SKEPTIC AGENT ---");
       console.log(skepticResponse);
 
+      // Check if deep mode (based on settings)
+      const settings = await safeStorageGet(['analysisDepth']);
+      const isDeepMode = settings?.analysisDepth === 'deep';
+
+      let sourceDiversityResponse = '';
+      let framingResponse = '';
+      let omissionResponse = '';
+
+      if (isDeepMode) {
+        console.log("Phase 2.5: Deep mode - Running specialized agents...");
+        
+        // Source Diversity Agent
+        const sourceDiversityPrompt = `Context: ${contextData}
+
+Account for context; not all need partisan balance.
+
+SOURCE_BREAKDOWN:
+- official: #
+- expert: #
+- stakeholder: #
+- advocacy: #
+- partisan_left: # / partisan_right: #
+- other: #
+
+CONTEXT: Adversarial/Non-Adversarial/Unknown
+GENDER: Balanced/Male-dominated/Female-dominated/Unknown
+POSITIONING: lead/close notes
+MISSING_VOICES: a, b (only if reasonably relevant)
+DIVERSITY_SCORE: 0-10
+CONFIDENCE: High/Medium/Low
+ASSESSMENT: one sentence
+
+TEXT:
+${textToSend}`;
+
+        sourceDiversityResponse = await state.currentSession.prompt(sourceDiversityPrompt);
+        console.log("--- SOURCE DIVERSITY AGENT ---");
+        console.log(sourceDiversityResponse);
+
+        // Framing Agent
+        const framingPrompt = `Context: ${contextData}
+
+Distinguish normal editorial judgment from manipulation. Don't flag inverted pyramid.
+
+HEADLINE_TONE: Neutral/Sensational/Misleading/Balanced
+MATCHES_CONTENT: true/false
+EXPLANATION: brief
+LEAD_FOCUS: summary of first 3 paras
+BURIED_INFO: a, b (after para 5)
+VOICE:
+- ACTIVE_SUBJECTS: a, b
+- PASSIVE_OBSCURED: a, b (if inappropriate)
+MANIPULATION_FLAGS: a, b (only if criteria met)
+FRAMING_SCORE: 0-10
+CONFIDENCE: High/Medium/Low
+ASSESSMENT: one sentence
+
+TEXT:
+${textToSend}`;
+
+        framingResponse = await state.currentSession.prompt(framingPrompt);
+        console.log("--- FRAMING AGENT ---");
+        console.log(framingResponse);
+
+        // Omission Agent
+        const omissionPrompt = `Context: ${contextData}
+
+List omissions ONLY if reasonable-to-include test passed (commonly included, feasible, available).
+
+MISSING_CONTEXT: a, b
+UNADDRESSED_COUNTERARGUMENTS: a, b
+MISSING_DATA: a, b
+UNANSWERED_QUESTIONS: a, b
+OMISSION_SEVERITY: None/Low/Medium/High
+CONFIDENCE: High/Medium/Low
+ASSESSMENT: one sentence
+
+TEXT:
+${textToSend}`;
+
+        omissionResponse = await state.currentSession.prompt(omissionPrompt);
+        console.log("--- OMISSION AGENT ---");
+        console.log(omissionResponse);
+        
+        console.log("Deep analysis agents complete.");
+      }
+
       // PHASE 3: Moderator
       console.log("Phase 3: Moderator synthesis...");
-      const moderatorPrompt = `You are the Final Moderator. Synthesize findings.
+      const moderatorPrompt = `You are a neutral synthesizer. Do NOT assume bias exists.
       
 CONTEXT: ${contextData}
 
@@ -484,27 +583,46 @@ ${hunterResponse}
 BALANCED ELEMENTS:
 ${skepticResponse}
 
-ANALYSIS RULES:
-1. Count how many loaded phrases came from QUOTES vs NARRATIVE
-2. If 70%+ of loaded language is in quotes → lean toward Center rating
-3. If 70%+ is in narrative → apply appropriate Left/Right rating
+${isDeepMode ? `DEEP ANALYSIS:
+Source Diversity: ${sourceDiversityResponse}
+Framing: ${framingResponse}
+Omissions: ${omissionResponse}
+
+` : ''}SYNTHESIS RULES:
+1. Parse inputs; ignore non-JSON or malformed data
+2. Require ≥2 independent narrative indicators OR 1 High-strength indicator corroborated by Framing/Omission before moving from Center
+3. Apply weighting:
+   - If ≥70% loaded language is in QUOTES → treat as source bias; lean Center unless framing/manipulation strong
+   - If ≥70% in NARRATIVE → consider direction per Hunter + Framing
+4. Balance mitigates: raise neutrality one notch if balance_score ≥7 with High confidence
+5. Small sample: if <2 narrative findings, default Center/Unclear
+6. Default to Center/Unclear when evidence insufficient
 
 Format:
 OVERALL BIAS ASSESSMENT
-Rating: [Left-Leaning/Center-Left/Center/Center-Right/Right-Leaning]
-Confidence: [High/Medium/Low]
-Summary: [2-3 sentences explaining the rating. If bias is mainly in quotes, state: "Most charged language comes from sources quoted, not the reporting itself."]
+Rating: [Strong Left | Lean Left | Center | Lean Right | Strong Right | Unclear]
+Confidence: [High | Medium | Low]
+Summary: [2-3 sentences. If quotes drove charged language, state it.${isDeepMode ? ' Mention source/framing if relevant.' : ''}]
 
 KEY FINDINGS
-- [Finding about the REPORTING]
-- [Finding about the REPORTING]
+- [Finding about REPORTING, not quotes]
+- [Another finding about journalistic choices]
+${isDeepMode ? '- [Source diversity or framing issue if found]\n- [Omission if significant]' : ''}
 
 BALANCED ELEMENTS
 - [Neutral aspect]
 
+${isDeepMode ? `DEEP INSIGHTS
+- [Source diversity finding]
+- [Framing finding]
+- [Omission finding if significant]
+
+` : ''}METHODOLOGY NOTE
+This separates source bias (quotes) from journalistic bias (narrative/structure). Defaults to Center/Unclear without adequate evidence.
+
 Rules:
 - Do NOT mention "agents"
-- Keep under 250 words
+- Keep under ${isDeepMode ? '350' : '250'} words
 - Start with "OVERALL BIAS ASSESSMENT"`;
 
       const moderatorResponse = await state.currentSession.prompt(moderatorPrompt);

@@ -38,9 +38,9 @@
       <div class="bias-confidence" id="bias-confidence">—</div>
     </div>
 
-    <div id="on-device-warning" class="on-device-warning">
-      <span class="warning-icon">⚠️</span>
-      <span class="warning-text">This analysis was performed on-device. For the highest accuracy, use the more powerful cloud-based AI.</span>
+    <div id="on-device-warning" class="on-device-warning" title="This article is long/complex. For deeper comparison and longer summaries, you can opt into Deep Analysis (cloud). Your text will be sent to your configured provider.">
+      <span class="warning-icon">ℹ️</span>
+      <span class="warning-text"><strong>Private (On-device)</strong> — fast, offline, privacy-preserving. <br><strong>Deep (Cloud)</strong> — opt-in for very long articles, multi-source compare, or heavy reasoning.</span>
     </div>
 
     <div class="results-card">
@@ -62,17 +62,67 @@
           </div>
         </header>
 
-        <section class="report-section">
-          <h2 class="section-title">Summary</h2>
-          <p class="section-content" id="summary-text">Run a scan from the side panel to see results here.</p>
-        </section>
-
-        <section class="report-section" id="details-section" hidden>
-          <h2 class="section-title">Details</h2>
-          <div class="section-content" id="details-content">
-            <em>No detailed breakdown available.</em>
+        <!-- Analysis Results Cards -->
+        <div class="analysis-cards-container">
+          <!-- Card 1: Key Findings -->
+          <div class="analysis-card">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">🔍</span>
+                <h2 class="card-title">Key Findings</h2>
+              </div>
+              <div class="card-body" id="key-findings-content">
+                <p class="placeholder-text">Run a scan from the side panel to see results here.</p>
+              </div>
+            </div>
           </div>
-        </section>
+
+          <!-- Card 2: Loaded Language Examples -->
+          <div class="analysis-card">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">⚠️</span>
+                <h2 class="card-title">Loaded Language Examples</h2>
+              </div>
+              <div class="card-body" id="loaded-language-content">
+                <p class="placeholder-text">No data available</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Balanced Elements -->
+          <div class="analysis-card">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">✓</span>
+                <h2 class="card-title">Balanced Elements</h2>
+              </div>
+              <div class="card-body" id="balanced-elements-content">
+                <p class="placeholder-text">No data available</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Methodology Note (Collapsible) -->
+          <details class="analysis-card methodology-card">
+            <summary class="card-header collapsible">
+              <span class="card-icon">📋</span>
+              <h2 class="card-title">Methodology Note</h2>
+              <span class="expand-icon">▼</span>
+            </summary>
+            <div class="card-content">
+              <div class="card-body" id="methodology-content">
+                <p class="methodology-text">
+                  Our analysis distinguishes between <strong>source bias</strong> (bias in quoted material) and <strong>journalistic bias</strong> (bias in the narrative framing, word choice, and presentation). 
+                  We focus on identifying how the author's language, tone, and structure may influence the reader's perception beyond the facts presented.
+                </p>
+              </div>
+            </div>
+          </details>
+        </div>
       </div>
     </div>
   </div>

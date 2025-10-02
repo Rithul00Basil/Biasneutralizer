@@ -199,8 +199,193 @@
 .primary-button:active { transform: scale(0.99); }
 .primary-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
+/* Analysis Cards Container */
+.analysis-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+/* Individual Analysis Card */
+.analysis-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+.analysis-card .card-background {
+  border-radius: 12px;
+}
+
+.analysis-card .card-content {
+  position: relative;
+  padding: 20px;
+  z-index: 1;
+  backdrop-filter: blur(2px);
+}
+
+/* Card Header */
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.card-header.collapsible {
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+  padding: 20px;
+  transition: background 0.2s ease;
+}
+
+.card-header.collapsible:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.card-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.card-title {
+  font-family: var(--font-inter);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  color: var(--text-white-100);
+  margin: 0;
+  flex: 1;
+}
+
+.expand-icon {
+  font-size: 12px;
+  color: var(--text-white-80);
+  transition: transform 0.3s ease;
+}
+
+details[open] .expand-icon {
+  transform: rotate(180deg);
+}
+
+/* Card Body */
+.card-body {
+  color: var(--text-white-90);
+  font-family: var(--font-inter);
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+.card-body ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-body li {
+  position: relative;
+  padding-left: 24px;
+  color: var(--text-white-90);
+}
+
+.card-body li::before {
+  content: '•';
+  position: absolute;
+  left: 8px;
+  color: var(--accent-orange, #F97316);
+  font-weight: bold;
+}
+
+/* Balanced Elements - positive styling */
+#balanced-elements-content li::before {
+  content: '✓';
+  color: #10B981;
+}
+
+/* Loaded Language Examples - warning styling */
+.language-example {
+  padding: 12px 16px;
+  background: rgba(249, 115, 22, 0.08);
+  border-left: 3px solid var(--accent-orange, #F97316);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.language-example:last-child {
+  margin-bottom: 0;
+}
+
+.language-phrase {
+  font-weight: 600;
+  color: var(--text-white-100);
+  margin-bottom: 4px;
+}
+
+.language-explanation {
+  font-size: 13px;
+  color: var(--text-white-80);
+  line-height: 1.5;
+}
+
+.language-direction {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-white-90);
+}
+
+/* Placeholder text */
+.placeholder-text {
+  color: var(--text-white-80);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Methodology Card */
+.methodology-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.methodology-card[open] .card-content {
+  padding-top: 0;
+}
+
+.methodology-text {
+  margin: 0;
+  color: var(--text-white-90);
+}
+
+.methodology-text strong {
+  color: var(--text-white-100);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .results-card-content { padding: 20px 16px; }
   .report-actions { width: 100%; }
   .report-actions .primary-button { flex: 1; }
+  
+  .analysis-cards-container {
+    gap: 16px;
+  }
+  
+  .analysis-card .card-content {
+    padding: 16px;
+  }
+  
+  .card-header.collapsible {
+    padding: 16px;
+  }
 }
