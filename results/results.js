@@ -247,7 +247,7 @@
     }
     
     // Parse both old style ("Rating:") and bracketed labels ("[RATING]:")
-    const ratingMatch = text.match(/\[?Rating\]?:?\s*(Left(-|\s)Leaning|CenterLeft|Center|Center-Right|Right(-|\s)Leaning)/i)
+    const ratingMatch = text.match(/\[?Rating\]?:?\s*(Strong\s+Left|Left|Lean\s+Left|Center|Lean\s+Right|Right|Strong\s+Right|Unclear)/i)
       || text.match(/\[RATING\]\s*:\s*([^\n]+)/i);
     const confidenceMatch = text.match(/\[?Confidence\]?:?\s*(High|Medium|Low)/i)
       || text.match(/\[CONFIDENCE\]\s*:\s*([^\n]+)/i);
@@ -262,6 +262,10 @@
   function parseAndRenderAnalysis(text, raw) {
     const sections = parseAnalysisSections(text);
     
+    // Store globally for other renderers
+    window.__analysisSections = sections;
+    window.__rawAnalysis = raw;
+    
     // Populate Key Findings card
     if (sections.keyFindings && sections.keyFindings.length > 0) {
       renderBulletList(els.keyFindings, sections.keyFindings);
@@ -269,12 +273,8 @@
       els.keyFindings.innerHTML = '<p class="placeholder-text">No data available</p>';
     }
     
-    // Populate Loaded Language card
-    if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
-      renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
-    } else {
-      els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
-    }
+    // Populate Loaded Language card - prefer structured data from raw
+    renderLoadedFromRaw();
     
     // Populate Balanced Elements card
     if (sections.balancedElements && sections.balancedElements.length > 0) {
@@ -282,18 +282,77 @@
     } else {
       els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
     }
+    
+    // Populate Methodology Note
+    renderMethodology();
+  }
+  
+  // Render Methodology dynamically
+  function renderMethodology() {
+    const methodEl = document.getElementById('methodology-content');
+    if (!methodEl) return;
+    
+    const s = window.__analysisSections || {};
+    methodEl.innerHTML = '';
+    const text = (s.methodology && s.methodology.length) ? s.methodology.join(' ') : '';
+    
+    if (text) {
+      const p = document.createElement('p');
+      p.className = 'methodology-text';
+      p.textContent = text;
+      methodEl.appendChild(p);
+    } else {
+      methodEl.innerHTML = '<p class="methodology-text">Method: narrative bias vs. quoted-source bias evaluated separately; only falsifiable indicators are flagged; genuine balance credited.</p>';
+    }
+  }
+  
+  // Render Loaded Language from structured data when available
+  function renderLoadedFromRaw() {
+    const raw = window.__rawAnalysis;
+    const sections = window.__analysisSections || {};
+    
+    // Try structured data first
+    if (raw && raw.analysis && Array.isArray(raw.analysis.languageAnalysis) && raw.analysis.languageAnalysis.length > 0) {
+      const items = raw.analysis.languageAnalysis;
+      els.loadedLanguage.innerHTML = '';
+      items.slice(0, 8).forEach(x => {
+        const exampleDiv = document.createElement('div');
+        exampleDiv.className = 'language-example';
+        
+        const phrase = typeof x === 'string' ? x : (x.phrase || JSON.stringify(x));
+        const phraseDiv = document.createElement('div');
+        phraseDiv.className = 'language-phrase';
+        phraseDiv.textContent = `"${phrase}"`;
+        exampleDiv.appendChild(phraseDiv);
+        
+        if (x.explanation) {
+          const explanationDiv = document.createElement('div');
+          explanationDiv.className = 'language-explanation';
+          explanationDiv.textContent = x.explanation;
+          exampleDiv.appendChild(explanationDiv);
+        }
+        
+        els.loadedLanguage.appendChild(exampleDiv);
+      });
+    } else if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
+      // Fall back to parsed text sections
+      renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
+    } else {
+      els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
+    }
   }
 
   // Parse the analysis text into structured sections
   function parseAnalysisSections(text) {
     if (!text || typeof text !== 'string') {
-      return { keyFindings: [], loadedLanguage: [], balancedElements: [] };
+      return { keyFindings: [], loadedLanguage: [], balancedElements: [], methodology: [] };
     }
 
     const sections = {
       keyFindings: [],
       loadedLanguage: [],
-      balancedElements: []
+      balancedElements: [],
+      methodology: []
     };
 
     // Split text into lines and find section headers
@@ -306,8 +365,8 @@
       'LOADED LANGUAGE': 'loadedLanguage',
       'LOADED LANGUAGE EXAMPLES': 'loadedLanguage',
       'BALANCED ELEMENTS': 'balancedElements',
+      'METHODOLOGY NOTE': 'methodology',
       'OVERALL BIAS ASSESSMENT': null,
-      'METHODOLOGY NOTE': null,
       'IMPORTANT RULES': null
     };
 

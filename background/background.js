@@ -5,6 +5,8 @@
 
 let activeScanControllers = new Map(); // tabId -> AbortController
 
+class RetriableError extends Error {}
+
 
 function normalizeForRenderer(text) {
   let out = (text || '').replace(/\r\n?/g, '\n');
@@ -19,97 +21,79 @@ function normalizeForRenderer(text) {
   return out.trim();
 }
 
-async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth) {
-  // Default to Flash if analysisDepth is invalid/missing
-  const model = (analysisDepth === 'quick' || !analysisDepth) 
-    ? 'gemini-2.5-flash'
-    : 'gemini-2.5-pro';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth, opts = {}) {
+  const { normalize = true, retries = 3 } = opts;
 
-  // Build request body
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }]}],
-    generationConfig: {
-      temperature: 0.7,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: 2048
-    }
-  };
+  const isDeep = analysisDepth === 'deep';
+  const primary = isDeep ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+  const fallbacks = isDeep
+    ? ['gemini-2.5-pro-exp-0827', 'gemini-2.0-pro-exp']
+    : ['gemini-2.5-flash-latest', 'gemini-2.0-flash-lite'];
+  const models = [primary, ...fallbacks];
 
-  // ✅ Add thinkingConfig correctly for supported cases
-  //  - Flash/Flash-Lite: allow 0 (off), -1 (auto), or positive
-  //  - Pro: don't send 0 (can't disable); allow -1 or a positive minimum (>=128)
-  if (typeof thinkingBudget === "number") {
-    if (model.includes("2.5-flash")) {
-      body.generationConfig.thinkingConfig = { thinkingBudget };
-    } else if (model.includes("2.5-pro")) {
-      if (thinkingBudget === -1 || thinkingBudget >= 128) {
-        body.generationConfig.thinkingConfig = { thinkingBudget };
+  let lastErr;
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const delayMs = 400 * Math.pow(attempt + 1, 2) + Math.floor(Math.random() * 200);
+
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }]}],
+        generationConfig: { temperature: 0.2, topP: 0.8, maxOutputTokens: 2048 }
+      };
+
+      // Add thinkingConfig for supported models
+      if (typeof thinkingBudget === "number") {
+        if (model.includes("2.5-flash") || model.includes("2.0-flash")) {
+          body.generationConfig.thinkingConfig = { thinkingBudget };
+        } else if (model.includes("2.5-pro") || model.includes("2.0-pro")) {
+          if (thinkingBudget === -1 || thinkingBudget >= 128) {
+            body.generationConfig.thinkingConfig = { thinkingBudget };
+          }
+        }
       }
-      // if thinkingBudget === 0 on Pro, omit the field entirely
+
+      try {
+        try { console.log('[BiasNeutralizer] Gemini request:', { model, url: `.../models/${model}:generateContent`, hasSignal: !!signal, body }); } catch {}
+
+        const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body), signal });
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok) {
+          const msg = (data && data.error && data.error.message) ? data.error.message : `HTTP ${resp.status}`;
+          if (resp.status === 503 || /UNAVAILABLE|overloaded/i.test(msg)) throw new RetriableError(msg);
+          throw new Error(`Gemini HTTP ${resp.status}: ${msg}`);
+        }
+
+        const candidate = data?.candidates?.[0];
+        if (!candidate) throw new Error('No response from API.');
+        
+        const finishReason = candidate.finishReason;
+        if (finishReason && finishReason !== 'STOP') {
+          const reasons = {
+            'SAFETY': 'Content was blocked by safety filters',
+            'RECITATION': 'Content flagged as potentially plagiarized',
+            'MAX_TOKENS': 'Response exceeded token limit',
+            'OTHER': 'Request blocked by content policy'
+          };
+          const message = reasons[finishReason] || `Request failed: ${finishReason}`;
+          throw new Error(message);
+        }
+
+        const text = (candidate.content?.parts || []).map(p => p.text || '').join('\n').trim();
+        if (!text) throw new Error('API returned empty response.');
+
+        return normalize ? normalizeForRenderer(text) : text;
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof RetriableError) { await new Promise(r => setTimeout(r, delayMs)); continue; }
+        throw err;
+      }
     }
   }
 
-  // Lightweight debug logging (excludes API key). Safe to leave for dev
-  try {
-    console.log('[BiasNeutralizer] Gemini request:', {
-      model,
-      url: `.../models/${model}:generateContent?key=***`,
-      hasSignal: !!signal,
-      body
-    });
-  } catch (_) {}
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body),
-    signal
-  });
-
-  if (!resp.ok) {
-    // Try to extract structured error first; fall back to text
-    let errText = '';
-    try {
-      const j = await resp.json();
-      errText = JSON.stringify(j);
-    } catch (_) {
-      errText = await resp.text().catch(() => '');
-    }
-    throw new Error(`Gemini HTTP ${resp.status}: ${errText.slice(0, 400)}`);
-  }
-
-  const data = await resp.json();
-
-  // Check for safety/content filtering
-  const candidate = data?.candidates?.[0];
-  if (!candidate) {
-    throw new Error('No response from API. The content may have been filtered.');
-  }
-
-  const finishReason = candidate.finishReason;
-  if (finishReason && finishReason !== 'STOP') {
-    const reasons = {
-      'SAFETY': 'Content was blocked by safety filters',
-      'RECITATION': 'Content flagged as potentially plagiarized',
-      'MAX_TOKENS': 'Response exceeded token limit',
-      'OTHER': 'Request blocked by content policy'
-    };
-    const message = reasons[finishReason] || `Request failed: ${finishReason}`;
-    throw new Error(message);
-  }
-
-  const parts = candidate.content?.parts || [];
-  const text = parts.map(p => p.text || '').join('\n').trim();
-
-  if (!text) {
-    throw new Error('API returned empty response. Try a different article or adjust settings.');
-  }
-
-  return normalizeForRenderer(text);
+  throw lastErr;
 }
 
 // Listen for extension icon clicks and open side panel
@@ -120,7 +104,7 @@ chrome.action.onClicked.addListener((tab) => {
 // Main message listener for side panel communication
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'REQUEST_SCAN') {
-    handleScanRequest(message, sendResponse);
+    handleScanRequest(message, sender, sendResponse);
     return true;
   }
 
@@ -130,7 +114,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function handleScanRequest(message, sendResponse) {
+async function handleScanRequest(message, sender, sendResponse) {
   console.log('[BiasNeutralizer] ===== SCAN REQUEST RECEIVED =====');
   console.log('[BiasNeutralizer] Message:', message);
   
@@ -189,7 +173,6 @@ async function handleScanRequest(message, sendResponse) {
 
     console.log('[BiasNeutralizer] Starting cloud AI scan:', {
       analysisDepth,
-      enableThinking,
       textLength: articleContent.fullText.length
     });
 
@@ -255,6 +238,15 @@ function handleCancelScan(sender) {
   }
 }
 
+function safeJSON(s, fallback) { 
+  try { 
+    return JSON.parse(s); 
+  } catch (error) { 
+    console.warn('[BiasNeutralizer] JSON parse failed:', error.message, 'Input:', typeof s === 'string' ? s.slice(0, 100) : s);
+    return fallback; 
+  } 
+}
+
 async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal) {
   let thinkingBudget;
   if (analysisDepth === 'deep') {
@@ -300,28 +292,16 @@ Output ONLY this JSON (no other text):
 ARTICLE TEXT:
 ${textToAnalyze}`;
 
-  const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth);
+  const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
   console.log('[BiasNeutralizer] Context analysis complete');
 
-   // Parse JSON response
-   let contextData;
-   try {
-     const contextJson = JSON.parse(contextResponse);
-     const articleType = contextJson.type || 'Unknown';
-     const summary = contextJson.summary || '';
-     const tone = contextJson.tone || 'Neutral';
-     const quoteRatio = contextJson.quote_ratio || 'Unknown';
-     const quotePct = contextJson.quote_percentage || 0;
-     contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio} (${quotePct}%).`;
-   } catch (e) {
-     // Fallback to text parsing if JSON fails
-     const contextLines = contextResponse.split('\n');
-     const articleType = contextLines.find(l => l.startsWith('TYPE:'))?.split(':')[1]?.trim() || 'Unknown';
-     const summary = contextLines.find(l => l.startsWith('SUMMARY:'))?.split(':')[1]?.trim() || '';
-     const tone = contextLines.find(l => l.startsWith('TONE:'))?.split(':')[1]?.trim() || 'Neutral';
-     const quoteRatio = contextLines.find(l => l.startsWith('QUOTE_RATIO:'))?.split(':')[1]?.trim() || 'Unknown';
-     contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio}.`;
-   }
+  const contextJson = safeJSON(contextResponse, { type: 'Unknown', summary: '', tone: 'Neutral', quote_ratio: 'Unknown', quote_percentage: 0, confidence: 'High' });
+  const articleType = contextJson.type || 'Unknown';
+  const summary = contextJson.summary || '';
+  const tone = contextJson.tone || 'Neutral';
+  const quoteRatio = contextJson.quote_ratio || 'Unknown';
+  const quotePct = contextJson.quote_percentage || 0;
+  const contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio} (${quotePct}%).`;
 
   console.log('[BiasNeutralizer] Context:', contextData);
 
@@ -564,10 +544,18 @@ TEXT:
 ${textToAnalyze}`;
   }
 
-  const quoteResponse = await callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth);
-  const languageResponse = await callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth);
-  const hunterResponse = await callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth);
-  const skepticResponse = await callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth);
+  // Execute agents in parallel for better performance
+  const [quoteResponse, languageResponse, hunterResponse, skepticResponse] = await Promise.all([
+    callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+  ]);
+
+  const languageJSON = safeJSON(languageResponse, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' });
+  const hunterJSON = safeJSON(hunterResponse, { bias_indicators: [], overall_bias: 'Unclear', confidence: 'High' });
+  const skepticJSON = safeJSON(skepticResponse, { balanced_elements: [], balance_score: 0, confidence: 'High' });
+  const quoteJSON = safeJSON(quoteResponse, { quotes: [], confidence: 'High' });
 
   // Deep mode: Execute specialized agents
   let sourceDiversityResponse = '';
@@ -576,69 +564,62 @@ ${textToAnalyze}`;
 
   if (analysisDepth === 'deep') {
     console.log('[BiasNeutralizer] Executing deep analysis agents...');
-    sourceDiversityResponse = await callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth);
-    framingResponse = await callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth);
-    omissionResponse = await callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth);
+    sourceDiversityResponse = await callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+    framingResponse = await callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+    omissionResponse = await callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
     console.log('[BiasNeutralizer] Deep analysis agents complete');
   }
 
   console.log('[BiasNeutralizer] Analysis agents complete');
 
   console.log('[BiasNeutralizer] Agent 5: Moderator synthesis...');
-  const moderatorPrompt = `You are a neutral synthesizer. Do NOT assume bias exists.
+  const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report.
 
+Use EXACT sections:
+OVERALL BIAS ASSESSMENT
+Rating: Center/Lean Left/Lean Right/Left/Right/Unclear
+Confidence: High/Medium/Low
+
+KEY FINDINGS
+- (Provide 2-4 items about REPORTING choices, not quoted content)
+
+LOADED LANGUAGE EXAMPLES
+- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
+
+BALANCED ELEMENTS
+- (Provide 1-3 items about genuine journalistic quality/balance)
+
+METHODOLOGY NOTE
+- One sentence on how quotes are separated from narrative bias and how evidence thresholds avoid false positives.
+
+Evidence (verbatim JSON from agents):
 CONTEXT: ${contextData}
-
-AGENT FINDINGS:
-Quotes: ${quoteResponse}
-Language: ${languageResponse}
-Bias Hunter: ${hunterResponse}
-Balance Skeptic: ${skepticResponse}
+LANGUAGE_JSON:
+${JSON.stringify(languageJSON)}
+HUNTER_JSON:
+${JSON.stringify(hunterJSON)}
+SKEPTIC_JSON:
+${JSON.stringify(skepticJSON)}
+QUOTES_JSON:
+${JSON.stringify(quoteJSON)}
 ${analysisDepth === 'deep' ? `
-DEEP ANALYSIS:
-Source Diversity: ${sourceDiversityResponse}
-Framing: ${framingResponse}
-Omission: ${omissionResponse}
+SOURCE_DIVERSITY_JSON:
+${sourceDiversityResponse}
+FRAMING_JSON:
+${framingResponse}
+OMISSION_JSON:
+${omissionResponse}
 ` : ''}
 
 SYNTHESIS RULES:
-1. Parse JSON inputs; ignore non-JSON
-2. Require ≥2 independent narrative indicators OR 1 High-strength indicator corroborated by Framing/Omission before moving from Center
-3. Apply weighting:
-   - If ≥70% loaded language is in QUOTES → treat as source bias; lean Center unless framing/manipulation strong
-   - If ≥70% in NARRATIVE → consider direction per Hunter + Framing
-4. Balance mitigates: raise neutrality one notch if balance_score ≥7 with High confidence
-5. Small sample: if <2 narrative findings, default Center/Unclear
-6. Default to Center/Unclear when evidence insufficient
+1. Require ≥2 independent narrative indicators OR 1 High-strength indicator before moving from Center
+2. If ≥70% loaded language is in QUOTES → treat as source bias; lean Center unless framing/manipulation strong
+3. Balance mitigates: raise neutrality if balance_score ≥7 with High confidence
+4. Default to Center/Unclear when evidence insufficient
 
-OUTPUT EXACT STRUCTURE (no markdown, no agent mentions):
+CRITICAL: Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
 
-OVERALL BIAS ASSESSMENT
-Rating: [Strong Left | Lean Left | Center | Lean Right | Strong Right | Unclear]
-Confidence: [High | Medium | Low]
-Summary: [2-3 sentences. If quotes drove charged language, state it. ${analysisDepth === 'deep' ? 'In deep mode, mention source/framing if relevant.' : ''}]
-
-KEY FINDINGS
-- [Finding about REPORTING, not quotes]
-- [Another finding about journalistic choices]
-- [Third if significant]
-${analysisDepth === 'deep' ? '- [Source diversity or framing issue if found]\n- [Omission issue if significant]' : ''}
-
-BALANCED ELEMENTS
-- [Neutral/positive aspect]
-- [Another if found]
-
-${analysisDepth === 'deep' ? `DEEP ANALYSIS INSIGHTS
-- [Source diversity finding]
-- [Framing finding]
-- [Omission finding if significant]
-
-` : ''}METHODOLOGY NOTE
-This separates source bias (quotes) from journalistic bias (narrative/structure). Defaults to Center/Unclear without adequate evidence.
-
-CRITICAL: Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Base on evidence only.`;
-
-  const moderatorResponse = await callGemini(apiKey, moderatorPrompt, thinkingBudget, signal, analysisDepth);
+  const moderatorResponse = await callGemini(apiKey, moderatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
   
   console.log('[BiasNeutralizer] ===== MODERATOR RESPONSE =====');
   console.log('[BiasNeutralizer] Moderator response type:', typeof moderatorResponse);
@@ -646,7 +627,13 @@ CRITICAL: Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Base on 
   console.log('[BiasNeutralizer] Moderator response:', moderatorResponse);
   console.log('[BiasNeutralizer] Multi-agent scan complete');
 
-  return moderatorResponse;
+  return {
+    text: moderatorResponse,
+    languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
+    balancedElements: skepticJSON.balanced_elements || [],
+    biasIndicators: hunterJSON.bias_indicators || [],
+    quotes: quoteJSON.quotes || []
+  };
 }
 
 // callGeminiAPI removed; migrated to callGemini helper above

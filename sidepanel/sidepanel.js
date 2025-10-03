@@ -353,9 +353,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      console.log("--- Starting Quote-Aware Analysis ---");
+      console.log("--- Starting Quick Bias Analysis ---");
       state.currentSession = await window.LanguageModel.create();
-      const textToSend = (articleContent.fullText || '').slice(0, 8000);
+      const textToSend = (articleContent.fullText || '').slice(0, 6000);
       
       // PHASE 1: Context Agent with Quote Detection
       console.log("Phase 1: Context Agent...");
@@ -385,28 +385,10 @@ ${textToSend}`;
       const contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio}.`;
       console.log("Context:", contextData);
 
-      // PHASE 2: Run 4 Agents
-      console.log("Phase 2: Running 4 specialized agents...");
+      // PHASE 2: Run 3 Agents (Quote agent removed for quick scan)
+      console.log("Phase 2: Running 3 specialized agents...");
 
-      // Agent 1: Quote Attribution
-  const quotePrompt = `Context: ${contextData}
-
-Extract ONLY direct quotes (no paraphrases).
-
-Format per quote:
-- "QUOTE": "exact text"
-  SPEAKER: name/Unknown
-  SOURCE_BIAS_CUES: term1, term2 (if quote contains loaded language)
-  ATTRIBUTION: Neutral/Endorsing/Skeptical/Balancing
-  COUNTERED: true/false (does narrative counter it?)
-
-If none: "No direct quotes found."
-CONFIDENCE: High/Medium/Low
-
-TEXT:
-${textToSend}`;
-
-      // Agent 2: Language Decoder (NARRATIVE ONLY)
+      // Agent 1: Language Decoder (NARRATIVE ONLY)
   const languagePrompt = `Context: ${contextData}
 
 Narrative only. Ignore quotes. Flag value-laden wording; skip precise/legal terms.
@@ -424,7 +406,7 @@ SUMMARY: one sentence
 TEXT:
 ${textToSend}`;
 
-      // Agent 3: Bias Hunter (NARRATIVE ONLY)
+      // Agent 2: Bias Hunter (NARRATIVE ONLY)
       const hunterPrompt = `Context: ${contextData}
 
 Narrative only. Do NOT assume bias. Flag only if listed criteria met. Need ≥2 indicators or 1 High-strength.
@@ -444,7 +426,7 @@ Default to Center/Unclear if insufficient evidence.
 TEXT:
 ${textToSend}`;
 
-      // Agent 4: Bias Skeptic
+      // Agent 3: Bias Skeptic
       const skepticPrompt = `Context: ${contextData}
 
 Credit genuine balance; avoid forced symmetry. No "both sides" if one is fringe.
@@ -461,20 +443,19 @@ STRENGTHS: one sentence
 TEXT:
 ${textToSend}`;
 
-      // Execute all agents
-      const quoteResponse = await state.currentSession.prompt(quotePrompt);
-      console.log("--- QUOTE AGENT ---");
-      console.log(quoteResponse);
-
-      const languageResponse = await state.currentSession.prompt(languagePrompt);
+      // Execute all 3 agents in parallel
+      const [languageResponse, hunterResponse, skepticResponse] = await Promise.all([
+        state.currentSession.prompt(languagePrompt),
+        state.currentSession.prompt(hunterPrompt),
+        state.currentSession.prompt(skepticPrompt)
+      ]);
+      
       console.log("--- LANGUAGE AGENT ---");
       console.log(languageResponse);
 
-      const hunterResponse = await state.currentSession.prompt(hunterPrompt);
       console.log("--- HUNTER AGENT ---");
       console.log(hunterResponse);
 
-      const skepticResponse = await state.currentSession.prompt(skepticPrompt);
       console.log("--- SKEPTIC AGENT ---");
       console.log(skepticResponse);
 
@@ -567,12 +548,27 @@ ${textToSend}`;
 
       // PHASE 3: Moderator
       console.log("Phase 3: Moderator synthesis...");
-      const moderatorPrompt = `You are a neutral synthesizer. Do NOT assume bias exists.
-      
-CONTEXT: ${contextData}
+      const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report.
 
-QUOTES (reflect SOURCES' bias):
-${quoteResponse}
+Use EXACT sections:
+OVERALL BIAS ASSESSMENT
+Rating: Center/Lean Left/Lean Right/Left/Right/Unclear
+Confidence: High/Medium/Low
+
+KEY FINDINGS
+- (Provide 2-4 items about REPORTING choices, not quoted content)
+
+LOADED LANGUAGE EXAMPLES
+- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
+
+BALANCED ELEMENTS
+- (Provide 1-3 items about genuine journalistic quality/balance)
+
+METHODOLOGY NOTE
+- One sentence on how quotes are separated from narrative bias and how evidence thresholds avoid false positives.
+
+Evidence:
+CONTEXT: ${contextData}
 
 NARRATIVE LANGUAGE:
 ${languageResponse}
@@ -589,45 +585,34 @@ Framing: ${framingResponse}
 Omissions: ${omissionResponse}
 
 ` : ''}SYNTHESIS RULES:
-1. Parse inputs; ignore non-JSON or malformed data
-2. Require ≥2 independent narrative indicators OR 1 High-strength indicator corroborated by Framing/Omission before moving from Center
-3. Apply weighting:
-   - If ≥70% loaded language is in QUOTES → treat as source bias; lean Center unless framing/manipulation strong
-   - If ≥70% in NARRATIVE → consider direction per Hunter + Framing
-4. Balance mitigates: raise neutrality one notch if balance_score ≥7 with High confidence
-5. Small sample: if <2 narrative findings, default Center/Unclear
-6. Default to Center/Unclear when evidence insufficient
+1. Require ≥2 independent narrative indicators OR 1 High-strength indicator before moving from Center
+2. Balance mitigates: raise neutrality if balance_score ≥7 with High confidence
+3. Default to Center/Unclear when evidence insufficient
 
-Format:
-OVERALL BIAS ASSESSMENT
-Rating: [Strong Left | Lean Left | Center | Lean Right | Strong Right | Unclear]
-Confidence: [High | Medium | Low]
-Summary: [2-3 sentences. If quotes drove charged language, state it.${isDeepMode ? ' Mention source/framing if relevant.' : ''}]
-
-KEY FINDINGS
-- [Finding about REPORTING, not quotes]
-- [Another finding about journalistic choices]
-${isDeepMode ? '- [Source diversity or framing issue if found]\n- [Omission if significant]' : ''}
-
-BALANCED ELEMENTS
-- [Neutral aspect]
-
-${isDeepMode ? `DEEP INSIGHTS
-- [Source diversity finding]
-- [Framing finding]
-- [Omission finding if significant]
-
-` : ''}METHODOLOGY NOTE
-This separates source bias (quotes) from journalistic bias (narrative/structure). Defaults to Center/Unclear without adequate evidence.
-
-Rules:
-- Do NOT mention "agents"
-- Keep under ${isDeepMode ? '350' : '250'} words
-- Start with "OVERALL BIAS ASSESSMENT"`;
+CRITICAL: Keep under ${isDeepMode ? '350' : '250'} words. Do NOT mention "agents".`;
 
       const moderatorResponse = await state.currentSession.prompt(moderatorPrompt);
       console.log("--- MODERATOR ---");
       console.log(moderatorResponse);
+
+      // Parse agent responses to match cloud scan format
+      const safeJSON = (s, fallback) => {
+        try { return JSON.parse(s); }
+        catch { return fallback; }
+      };
+      
+      const languageJSON = safeJSON(languageResponse, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' });
+      const hunterJSON = safeJSON(hunterResponse, { bias_indicators: [], overall_bias: 'Unclear', confidence: 'High' });
+      const skepticJSON = safeJSON(skepticResponse, { balanced_elements: [], balance_score: 0, confidence: 'High' });
+      
+      // Structure result to match cloud scan format
+      const analysisResult = {
+        text: moderatorResponse,
+        languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
+        balancedElements: skepticJSON.balanced_elements || [],
+        biasIndicators: hunterJSON.bias_indicators || [],
+        quotes: []
+      };
 
       // Cleanup
       if (state.currentSession) {
@@ -640,7 +625,7 @@ Rules:
       state.isScanning = false;
       elements.scanButton.disabled = false;
 
-      await openResultsPage(moderatorResponse, 'private', articleContent);
+      await openResultsPage(analysisResult, 'private', articleContent);
       
     } catch (error) {
       console.error("Scan failed:", error);
