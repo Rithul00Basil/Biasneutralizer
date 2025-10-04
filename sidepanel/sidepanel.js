@@ -2,7 +2,142 @@
  * BiasNeutralizer Side Panel Controller
  * Manages article scanning, AI analysis, and user interactions
  */
+import { AgentPrompts } from '../shared/prompts.js';
 document.addEventListener('DOMContentLoaded', () => {
+  // === sidepanel rating validation + model label helpers ===
+  function normalizeModeratorSections(markdown) {
+    const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
+    markdown = String(markdown).replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
+      let r = String(p2 || '').trim();
+      const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
+      r = map[r] || r;
+      if (!allowed.has(r)) r = 'Unclear';
+      return p1 + r;
+    });
+    markdown = markdown.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
+      let c = String(p2 || '').trim();
+      if (!['High','Medium','Low'].includes(c)) c = 'Medium';
+      return p1 + c;
+    });
+    return markdown;
+  }
+
+  function getModelNameForDepth(depth) {
+    return depth === 'deep' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+  }
+
+  // === on-device quick-scan helpers ===
+  function safeJSON(x, fallback = null) {
+    try { return JSON.parse(x); } catch { return fallback; }
+  }
+
+  function deriveQuickModeratorMarkdown(contextJSON, languageJSON, hunterJSON, skepticJSON, quoteJSON) {
+    const t = String(contextJSON?.type || '').toLowerCase();
+    const isOpinionAnalysis = !!contextJSON?.is_opinion_or_analysis || t === 'opinion' || t === 'analysis';
+    if (isOpinionAnalysis) {
+      return [
+        '## Overall Bias Assessment',
+        'Rating: Unclear',
+        'Confidence: High',
+        '',
+        'Opinion content — not evaluated for news bias.',
+        '',
+        '### Balanced Elements',
+        '- Opinion/analysis detected; skipping news-bias scoring.',
+        '',
+        '### Methodology Note',
+        'Quotes are separated from narrative; opinion pieces are not rated for news bias.'
+      ].join('\n');
+    }
+
+    const indicators = Array.isArray(hunterJSON?.bias_indicators) ? hunterJSON.bias_indicators : [];
+    let points = 0;
+    let lowPoints = 0;
+    const typesSeen = new Set();
+    indicators.forEach(ind => {
+      const str = String(ind?.strength || '').toLowerCase();
+      const type = String(ind?.type || 'Unknown');
+      if (str === 'high') points += 2;
+      else if (str === 'medium') points += 1;
+      else if (str === 'low') lowPoints += 0.5;
+      typesSeen.add(type);
+    });
+    points += Math.min(lowPoints, 1);
+
+    const qt = Number(quoteJSON?.total_quotes || 0);
+    const ql = Number(quoteJSON?.quotes_with_loaded_terms || 0);
+    const quoteLoadedRatio = qt > 0 ? (ql / qt) : 0;
+    const heavySourceBias = quoteLoadedRatio >= 0.7;
+    const pointsNeeded = heavySourceBias ? 3 : 2;
+
+    const balanceScore = Number(skepticJSON?.balance_score || 0);
+    const skepticConf = String(skepticJSON?.confidence || 'High');
+    if (balanceScore >= 8 && skepticConf === 'High') {
+      return [
+        '## Overall Bias Assessment',
+        'Rating: Center',
+        'Confidence: High',
+        '',
+        '### Key Findings',
+        '- Strong balance (balance_score ≥ 8) with high confidence.',
+        '',
+        '### Loaded Language Examples',
+        (languageJSON?.loaded_phrases?.length ? '- Some loaded phrases present, but overall balance holds.' : 'No material loaded wording in narrative.'),
+        '',
+        '### Balanced Elements',
+        '- Credible sourcing/attribution and proportionate counter-perspectives.',
+        '',
+        '### Methodology Note',
+        'Used points threshold and source-bias weighting; quotes don’t count as narrative bias.'
+      ].join('\n');
+    }
+
+    let dir = String(hunterJSON?.overall_bias || 'Center');
+    const norm = dir.toLowerCase();
+    const isLeft = norm.includes('left');
+    const isRight = norm.includes('right');
+
+    let rating = 'Center';
+    if (points >= pointsNeeded && typesSeen.size >= 2) {
+      if (isLeft) rating = points >= 4 ? 'Strong Left' : 'Lean Left';
+      else if (isRight) rating = points >= 4 ? 'Strong Right' : 'Lean Right';
+      else rating = 'Lean Left';
+    }
+
+    let confidence = 'Medium';
+    if (points === 0 || (points < pointsNeeded && balanceScore >= 6)) confidence = 'High';
+    if (points >= 4 && typesSeen.size >= 3) confidence = 'High';
+
+    const keyFindings = [];
+    if (points === 0) keyFindings.push('- Narrative reads factual/neutral with no substantive indicators.');
+    else keyFindings.push(`- Evidence points: ${points.toFixed(1)} across ${typesSeen.size} independent indicators.`);
+    if (heavySourceBias) keyFindings.push('- Loaded phrasing occurs mainly inside quotes (source bias).');
+    if (balanceScore) keyFindings.push(`- Balance score: ${balanceScore}/10.`);
+
+    const languageLines = (Array.isArray(languageJSON?.loaded_phrases) && languageJSON.loaded_phrases.length)
+      ? languageJSON.loaded_phrases.slice(0, 4).map(p => `- "${p.phrase}" — ${p.explanation || 'loaded'}; neutral: ${p.neutral_alternative || '—'}`)
+      : ['No material loaded wording in narrative.'];
+
+    return [
+      '## Overall Bias Assessment',
+      `Rating: ${rating}`,
+      `Confidence: ${confidence}`,
+      '',
+      '### Key Findings',
+      ...keyFindings,
+      '',
+      '### Loaded Language Examples',
+      ...languageLines,
+      '',
+      '### Balanced Elements',
+      (Array.isArray(skepticJSON?.balanced_elements) && skepticJSON.balanced_elements.length
+        ? '- ' + (skepticJSON.balanced_elements[0].explanation || 'Shows balance')
+        : '- None notable.'),
+      '',
+      '### Methodology Note',
+      'Applied points threshold (High=2, Medium=1, Low≤1 total), quote weighting (≥70% in quotes ⇒ source bias), and Skeptic override (balance ≥8 ⇒ Center).'
+    ].join('\n');
+  }
   // ========================================
   // CONSTANTS
   // ========================================
@@ -279,6 +414,9 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/\[RATING\]\s*:/gi, 'Rating:')
       .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
 
+    // Validate/normalize moderator sections for rating and confidence
+    normalized = normalizeModeratorSections(normalized);
+
     const resultToStore = {
       summary: normalized, // always a string
       source: source,
@@ -357,11 +495,12 @@ document.addEventListener('DOMContentLoaded', () => {
       state.currentSession = await window.LanguageModel.create();
       const textToSend = (articleContent.fullText || '').slice(0, 6000);
       
-      // PHASE 1: Context Agent with Quote Detection
+      // PHASE 1: Context Agent with Article Type Detection
       console.log("Phase 1: Context Agent...");
-      const contextPrompt = `Do NOT assume bias. Classify objectively.
+      const contextPrompt = `Classify article type objectively. DO NOT search for bias.
 
-TYPE: News/Opinion/Analysis/Satire/Academic/Other/Unknown
+ARTICLE_TYPE: News/Opinion/Analysis/Satire/Academic/Other
+IS_NEWS: Yes/No (Yes only if straight news reporting)
 SUMMARY: [exactly ten words]
 TONE: Neutral/Emotional/Analytical/Mixed
 QUOTE_RATIO: Low/Medium/High (0-30%/31-60%/61-100%)
@@ -377,66 +516,91 @@ ${textToSend}`;
 
       // Extract context
       const contextLines = contextResponse.split('\n');
-      const articleType = contextLines.find(l => l.startsWith('TYPE:'))?.split(':')[1]?.trim() || 'Unknown';
+      const articleType = contextLines.find(l => l.startsWith('ARTICLE_TYPE:'))?.split(':')[1]?.trim() || 'Unknown';
+      const isNews = contextLines.find(l => l.startsWith('IS_NEWS:'))?.split(':')[1]?.trim() === 'Yes';
       const summary = contextLines.find(l => l.startsWith('SUMMARY:'))?.split(':')[1]?.trim() || '';
       const tone = contextLines.find(l => l.startsWith('TONE:'))?.split(':')[1]?.trim() || 'Neutral';
       const quoteRatio = contextLines.find(l => l.startsWith('QUOTE_RATIO:'))?.split(':')[1]?.trim() || 'Unknown';
       
-      const contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio}.`;
+      const contextData = `${articleType} article (News: ${isNews}). ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio}.`;
       console.log("Context:", contextData);
 
-      // PHASE 2: Run 3 Agents (Quote agent removed for quick scan)
+      // PHASE 2: Run 3 Agents (Only if News article)
       console.log("Phase 2: Running 3 specialized agents...");
 
-      // Agent 1: Language Decoder (NARRATIVE ONLY)
-  const languagePrompt = `Context: ${contextData}
+      // Agent 1: Language Decoder - FIXED with stricter requirements
+      const languagePrompt = `Context: ${contextData}
 
-Narrative only. Ignore quotes. Flag value-laden wording; skip precise/legal terms.
+NARRATIVE TEXT ONLY. Skip all quoted content.
+
+Flag ONLY if ALL these conditions met:
+1. Phrase contains value-laden adjectives/adverbs/verbs
+2. A neutral alternative exists that preserves meaning
+3. NOT supported by facts/data in article
+
+NEVER flag:
+- Statistics or data-backed claims
+- Technical/legal terminology
+- Descriptions supported by evidence
 
 Format:
 - PHRASE: "exact phrase"
-  WHY: brief reason
+  WHY: specific bias (not just "loaded")
   NEUTRAL_ALT: alternative wording
-  CONTEXT: short surrounding text
+  CONTEXT: surrounding text
 
-NEUTRALITY: [0-10]
+NEUTRALITY: [0-10] (10 = perfectly neutral)
 CONFIDENCE: High/Medium/Low
 SUMMARY: one sentence
 
 TEXT:
 ${textToSend}`;
 
-      // Agent 2: Bias Hunter (NARRATIVE ONLY)
+      // Agent 2: Bias Hunter - FIXED with higher evidence bar
       const hunterPrompt = `Context: ${contextData}
 
-Narrative only. Do NOT assume bias. Flag only if listed criteria met. Need ≥2 indicators or 1 High-strength.
+NARRATIVE TEXT ONLY. Default assumption: Article is CENTER/NEUTRAL.
+
+Flag ONLY if you find ≥2 INDEPENDENT indicators from this list:
+- Framing: Essential counter-facts buried after para 8
+- Sourcing: >80% sources favor one viewpoint with no balance
+- Language: Multiple unsupported value judgments
+- Causality: Correlation presented as causation without evidence
+- Editorial: Direct moral judgments without attribution
 
 Format:
-- TYPE: Framing/Sourcing/Language/Causality/Editorial
-  EXAMPLE: "exact text/structure"
-  WHY: reason tied to criteria
-  STRENGTH: Low/Medium/High
-  EVIDENCE: para/position
+- TYPE: [from list above]
+  EXAMPLE: "exact text"
+  WHY: specific evidence of bias
+  STRENGTH: Low/Medium/High (High = clear violation)
+  LOCATION: paragraph number
 
-OVERALL_BIAS: Strong Left/Lean Left/Center/Lean Right/Strong Right/Unclear
+OVERALL_BIAS: Center (default unless strong evidence)
 CONFIDENCE: High/Medium/Low
 
-Default to Center/Unclear if insufficient evidence.
+Require ≥2 High-strength OR ≥3 Medium-strength indicators to move from Center.
 
 TEXT:
 ${textToSend}`;
 
-      // Agent 3: Bias Skeptic
+      // Agent 3: Bias Skeptic - FIXED to properly credit balance
       const skepticPrompt = `Context: ${contextData}
 
-Credit genuine balance; avoid forced symmetry. No "both sides" if one is fringe.
+Find genuine balance/quality journalism indicators.
+
+Credit as balanced when:
+- Multiple credible perspectives included
+- Attribution is transparent
+- Context/background provided
+- Uncertainties acknowledged
+- Complexity not oversimplified
 
 Format:
 - TYPE: Sourcing/Attribution/Context/Nuance/Transparency
   EXAMPLE: "text"
-  WHY: reason
+  WHY: why this shows balance
 
-BALANCE_SCORE: 0-10
+BALANCE_SCORE: 0-10 (8+ = highly balanced)
 CONFIDENCE: High/Medium/Low
 STRENGTHS: one sentence
 
@@ -459,9 +623,20 @@ ${textToSend}`;
       console.log("--- SKEPTIC AGENT ---");
       console.log(skepticResponse);
 
+      // Quote Agent (for weighting source vs narrative loaded language)
+      const quotePrompt = AgentPrompts.createQuotePrompt(contextData, textToSend);
+      const quoteResponse = await state.currentSession.prompt(quotePrompt);
+      console.log("--- QUOTE AGENT ---");
+      console.log(quoteResponse);
+
       // Check if deep mode (based on settings)
       const settings = await safeStorageGet(['analysisDepth']);
       const isDeepMode = settings?.analysisDepth === 'deep';
+      let moderatorBudget = 0;
+      if (!isDeepMode) {
+        // keep quick scans fast; small budget for final synthesis stability
+        moderatorBudget = 8;
+      }
 
       let sourceDiversityResponse = '';
       let framingResponse = '';
@@ -470,10 +645,10 @@ ${textToSend}`;
       if (isDeepMode) {
         console.log("Phase 2.5: Deep mode - Running specialized agents...");
         
-        // Source Diversity Agent
+        // Source Diversity Agent - FIXED
         const sourceDiversityPrompt = `Context: ${contextData}
 
-Account for context; not all need partisan balance.
+Analyze source diversity. Remember: not all articles need partisan balance.
 
 SOURCE_BREAKDOWN:
 - official: #
@@ -483,10 +658,10 @@ SOURCE_BREAKDOWN:
 - partisan_left: # / partisan_right: #
 - other: #
 
-CONTEXT: Adversarial/Non-Adversarial/Unknown
+CONTEXT: Adversarial/Non-Adversarial/Not-Applicable
 GENDER: Balanced/Male-dominated/Female-dominated/Unknown
-POSITIONING: lead/close notes
-MISSING_VOICES: a, b (only if reasonably relevant)
+POSITIONING: lead vs close sources
+MISSING_VOICES: ONLY list if clearly relevant and feasible
 DIVERSITY_SCORE: 0-10
 CONFIDENCE: High/Medium/Low
 ASSESSMENT: one sentence
@@ -498,21 +673,18 @@ ${textToSend}`;
         console.log("--- SOURCE DIVERSITY AGENT ---");
         console.log(sourceDiversityResponse);
 
-        // Framing Agent
+        // Framing Agent - FIXED
         const framingPrompt = `Context: ${contextData}
 
-Distinguish normal editorial judgment from manipulation. Don't flag inverted pyramid.
+Check story structure. Standard inverted pyramid is NOT manipulation.
 
 HEADLINE_TONE: Neutral/Sensational/Misleading/Balanced
 MATCHES_CONTENT: true/false
 EXPLANATION: brief
-LEAD_FOCUS: summary of first 3 paras
-BURIED_INFO: a, b (after para 5)
-VOICE:
-- ACTIVE_SUBJECTS: a, b
-- PASSIVE_OBSCURED: a, b (if inappropriate)
-MANIPULATION_FLAGS: a, b (only if criteria met)
-FRAMING_SCORE: 0-10
+LEAD_FOCUS: first 3 paragraphs summary
+BURIED_INFO: ONLY list if contradicts lead claims
+MANIPULATION_FLAGS: ONLY if headline contradicts body
+FRAMING_SCORE: 0-10 (10 = perfectly structured)
 CONFIDENCE: High/Medium/Low
 ASSESSMENT: one sentence
 
@@ -523,18 +695,22 @@ ${textToSend}`;
         console.log("--- FRAMING AGENT ---");
         console.log(framingResponse);
 
-        // Omission Agent
+        // Omission Agent - FIXED
         const omissionPrompt = `Context: ${contextData}
 
-List omissions ONLY if reasonable-to-include test passed (commonly included, feasible, available).
+List ONLY omissions that ALL competent journalists would include.
 
-MISSING_CONTEXT: a, b
-UNADDRESSED_COUNTERARGUMENTS: a, b
-MISSING_DATA: a, b
-UNANSWERED_QUESTIONS: a, b
+Test ALL must be true:
+1. Standard for this beat/topic
+2. Available when article written
+3. Changes story interpretation significantly
+
+MISSING_CONTEXT: [only if passes test]
 OMISSION_SEVERITY: None/Low/Medium/High
 CONFIDENCE: High/Medium/Low
 ASSESSMENT: one sentence
+
+Default: No significant omissions
 
 TEXT:
 ${textToSend}`;
@@ -546,72 +722,78 @@ ${textToSend}`;
         console.log("Deep analysis agents complete.");
       }
 
-      // PHASE 3: Moderator
+      // PHASE 3: Moderator - COMPLETELY REWRITTEN
       console.log("Phase 3: Moderator synthesis...");
-      const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report.
+      const moderatorPrompt = `You are the Moderator. Create final bias assessment.
 
-Use EXACT sections:
+CRITICAL RULES:
+1. If article type is Opinion/Analysis/Satire → Output: "OPINION/ANALYSIS CONTENT - Not evaluated for news bias"
+2. If Balance Score ≥8 → FORCE rating to Center regardless of other indicators
+3. Evidence scoring: High = 2 points, Medium = 1 point. Need 3+ points to move from Center.
+4. If ≥70% of loaded language is in QUOTES → treat as source bias, not article bias
+5. Default rating is CENTER unless overwhelming evidence
+
+Use EXACT format:
+
 OVERALL BIAS ASSESSMENT
-Rating: Center/Lean Left/Lean Right/Left/Right/Unclear
+Rating: [MUST be: Center/Lean Left/Lean Right/Left/Right/Unclear]
 Confidence: High/Medium/Low
 
 KEY FINDINGS
-- (Provide 2-4 items about REPORTING choices, not quoted content)
+- [2-4 factual observations about reporting, NOT quoted content]
 
 LOADED LANGUAGE EXAMPLES
-- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
+- [ONLY list if found in narrative, not quotes. Format: "phrase" — reason, alternative]
 
 BALANCED ELEMENTS
-- (Provide 1-3 items about genuine journalistic quality/balance)
+- [1-3 genuine quality indicators]
 
 METHODOLOGY NOTE
-- One sentence on how quotes are separated from narrative bias and how evidence thresholds avoid false positives.
+- Quotes excluded from bias analysis. Evidence threshold: 3+ points required.
 
-Evidence:
+Evidence from agents:
+ARTICLE TYPE: ${articleType} (Is News: ${isNews})
 CONTEXT: ${contextData}
 
-NARRATIVE LANGUAGE:
+LANGUAGE ANALYSIS:
 ${languageResponse}
 
 BIAS INDICATORS:
 ${hunterResponse}
 
-BALANCED ELEMENTS:
+BALANCE ELEMENTS:
 ${skepticResponse}
 
 ${isDeepMode ? `DEEP ANALYSIS:
-Source Diversity: ${sourceDiversityResponse}
+Source: ${sourceDiversityResponse}
 Framing: ${framingResponse}
-Omissions: ${omissionResponse}
+Omissions: ${omissionResponse}` : ''}
 
-` : ''}SYNTHESIS RULES:
-1. Require ≥2 independent narrative indicators OR 1 High-strength indicator before moving from Center
-2. Balance mitigates: raise neutrality if balance_score ≥7 with High confidence
-3. Default to Center/Unclear when evidence insufficient
+Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
 
-CRITICAL: Keep under ${isDeepMode ? '350' : '250'} words. Do NOT mention "agents".`;
-
-      const moderatorResponse = await state.currentSession.prompt(moderatorPrompt);
-      console.log("--- MODERATOR ---");
-      console.log(moderatorResponse);
+      // Skip on-device LLM moderator; use deterministic synthesis instead
+      console.log("--- MODERATOR (derived) ---");
 
       // Parse agent responses to match cloud scan format
-      const safeJSON = (s, fallback) => {
-        try { return JSON.parse(s); }
-        catch { return fallback; }
-      };
-      
+      const contextJSON  = safeJSON(contextResponse,  {});
       const languageJSON = safeJSON(languageResponse, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' });
-      const hunterJSON = safeJSON(hunterResponse, { bias_indicators: [], overall_bias: 'Unclear', confidence: 'High' });
-      const skepticJSON = safeJSON(skepticResponse, { balanced_elements: [], balance_score: 0, confidence: 'High' });
-      
+      const hunterJSON   = safeJSON(hunterResponse,   { bias_indicators: [], overall_bias: 'Center', confidence: 'High' });
+      const skepticJSON  = safeJSON(skepticResponse,  { balanced_elements: [], balance_score: 5, confidence: 'High' });
+      const quoteJSON    = safeJSON(quoteResponse,    { quotes: [], quotes_with_loaded_terms: 0, total_quotes: 0, confidence: 'High' });
+
+      // Build final markdown using on-device quick synthesis
+      let moderatorMarkdown = deriveQuickModeratorMarkdown(
+        contextJSON, languageJSON, hunterJSON, skepticJSON, quoteJSON
+      );
+      console.log(moderatorMarkdown);
+
       // Structure result to match cloud scan format
       const analysisResult = {
-        text: moderatorResponse,
+        text: moderatorMarkdown,
         languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
         balancedElements: skepticJSON.balanced_elements || [],
         biasIndicators: hunterJSON.bias_indicators || [],
-        quotes: []
+        quotes: quoteJSON.quotes || []
       };
 
       // Cleanup
@@ -625,7 +807,7 @@ CRITICAL: Keep under ${isDeepMode ? '350' : '250'} words. Do NOT mention "agents
       state.isScanning = false;
       elements.scanButton.disabled = false;
 
-      await openResultsPage(analysisResult, 'private', articleContent);
+      await openResultsPage(analysisResult, 'on-device', articleContent);
       
     } catch (error) {
       console.error("Scan failed:", error);
@@ -642,6 +824,7 @@ CRITICAL: Keep under ${isDeepMode ? '350' : '250'} words. Do NOT mention "agents
       showNotification("Scan failed. Check console.", 'error');
     }
   }
+  
   function scanWithCloudAI(articleContent) {
     if (state.isScanning) {
       console.warn('[BiasNeutralizer] Scan already in progress');

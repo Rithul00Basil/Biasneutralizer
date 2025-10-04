@@ -3,21 +3,53 @@
  * Manages cloud-based AI analysis with multi-agent system
  */
 
+import { AgentPrompts } from '../shared/prompts.js';
+
 let activeScanControllers = new Map(); // tabId -> AbortController
 
 class RetriableError extends Error {}
 
 
 function normalizeForRenderer(text) {
-  let out = (text || '').replace(/\r\n?/g, '\n');
-  // Map bracket labels to what Results expects
+  let out = String(text || '').replace(/\r\n?/g, '\n');
+
+  // Map bracket labels to canonical form the renderer expects
   out = out
     .replace(/\[RATING\]\s*:/gi, 'Rating:')
     .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
-  // Guarantee a top section so the page never looks empty
-  if (!/Overall Bias Assessment/i.test(out)) {
+
+  // Ensure the top section exists
+  if (!/^\s*##\s*Overall Bias Assessment/im.test(out)) {
     out = '## Overall Bias Assessment\n' + out;
   }
+
+  // Enforce allowed ratings + default if missing
+  const allowedRatings = ['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear'];
+  const ratingRegex = /(Rating:\s*)([^\n]+)/i;
+  if (ratingRegex.test(out)) {
+    out = out.replace(ratingRegex, (m, p1, p2) => {
+      let r = String(p2 || '').trim();
+      const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
+      r = map[r] || r;
+      if (!allowedRatings.includes(r)) r = 'Unclear';
+      return p1 + r;
+    });
+  } else {
+    out += '\nRating: Unclear';
+  }
+
+  // Enforce Confidence (High/Medium/Low) + default if missing
+  const confRegex = /(Confidence:\s*)([^\n]+)/i;
+  if (confRegex.test(out)) {
+    out = out.replace(confRegex, (m, p1, p2) => {
+      let c = String(p2 || '').trim();
+      if (!['High','Medium','Low'].includes(c)) c = 'Medium';
+      return p1 + c;
+    });
+  } else {
+    out += '\nConfidence: Medium';
+  }
+
   return out.trim();
 }
 
@@ -55,8 +87,6 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
       }
 
       try {
-        try { console.log('[BiasNeutralizer] Gemini request:', { model, url: `.../models/${model}:generateContent`, hasSignal: !!signal, body }); } catch {}
-
         const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body), signal });
         const data = await resp.json().catch(() => ({}));
 
@@ -83,6 +113,8 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
         const text = (candidate.content?.parts || []).map(p => p.text || '').join('\n').trim();
         if (!text) throw new Error('API returned empty response.');
+
+        try { console.log('[BiasNeutralizer] Gemini request:', { model, url: `.../models/${model}:generateContent`, hasSignal: !!signal, used: true }); } catch {}
 
         return normalize ? normalizeForRenderer(text) : text;
       } catch (err) {
@@ -253,8 +285,8 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
     // Deep analysis: enable thinking (auto) on Pro
     thinkingBudget = -1;
   } else {
-    // Quick scan: 1000 token thinking budget on Flash
-    thinkingBudget = 1000;
+    // Quick scan: 0 token thinking budget on Flash for speed
+    thinkingBudget = 0;
   }
 
   console.log('[BiasNeutralizer] Using thinking budget:', thinkingBudget);
@@ -262,26 +294,31 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
   const textToAnalyze = articleText.slice(0, 8000);
 
   console.log('[BiasNeutralizer] Agent 1: Context analysis...');
+  /*
   const contextPrompt = `You are a neutral classifier. Do NOT assume bias exists.
 
 Task: Classify genre and extract context. If uncertain, use "Unknown" rather than guessing.
 
 Definitions:
 - News: Timely reporting, minimal opinion
-- Opinion: Explicit viewpoint/commentary
-- Analysis: Explains significance, includes interpretation
+- Opinion: Explicit viewpoint/commentary (op-ed, column, editorial, first‑person)
+- Analysis: Explains significance with interpretation, not straight reporting
 - Satire: Humor/irony, not literal
 - Academic: Scholarly, citations, formal
-- Other: Specify if none fit
+- Other: Specify if none fit (e.g., press release, police report, dataset page)
 
 Rules:
 - Do not judge ideology or search for bias
+- Detect opinion/analysis markers in headers/bylines (e.g., "Opinion", "Analysis", "Column")
+- Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
 - Estimate quoted material: count approximate word percentage inside quotation marks
-- Low = 0-30%, Medium = 31-60%, High = 61-100%
+  • Low = 0–30%, Medium = 31–60%, High = 61–100%
 
 Output ONLY this JSON (no other text):
 {
   "type": "News/Opinion/Analysis/Satire/Academic/Other/Unknown",
+  "is_opinion_or_analysis": true/false,
+  "subtype": "e.g., Official data release/Press release/Column/Editorial/None",
   "summary": "EXACTLY TEN WORDS describing main topic",
   "tone": "Neutral/Emotional/Analytical/Mixed",
   "quote_ratio": "Low/Medium/High",
@@ -290,7 +327,9 @@ Output ONLY this JSON (no other text):
 }
 
 ARTICLE TEXT:
-${textToAnalyze}`;
+  ${textToAnalyze}`;
+  */
+  const contextPrompt = AgentPrompts.createContextPrompt(textToAnalyze);
 
   const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
   console.log('[BiasNeutralizer] Context analysis complete');
@@ -307,18 +346,20 @@ ${textToAnalyze}`;
 
   console.log('[BiasNeutralizer] Agents 2-4: Language, Bias, and Skeptic analysis...');
 
+  /*
   const languagePrompt = `Context: ${contextData}
 
 Analyze ONLY reporter's narrative (exclude all quoted text).
 
-Flag phrases ONLY if BOTH true:
-1. Value-laden (judgmental adjectives/adverbs, insinuating verbs, speculative hedges)
+Flag phrases ONLY if ALL are true:
+1. Value‑laden (judgmental adjectives/adverbs, insinuating verbs, speculative hedges)
 2. A neutral, precise alternative exists
+3. The phrase is NOT a factual statistic, measurement, count, date, quote attribution, or data‑backed descriptor
 
 Do NOT flag:
 - Precise technical/legal terms ("felony", "GDP contracted")
-- Neutral quantifiers backed by facts
-- Demonstrably factual descriptors
+- Numbers/percentages/rates, time trends, or sourced findings (e.g., "22% decrease" with source)
+- Headlines/quotes content; treat quoted loaded terms as source bias
 
 Require: Provide neutral alternative for each flagged phrase
 
@@ -341,7 +382,10 @@ If none: {"loaded_phrases": [], "neutrality_score": 10, "confidence": "High", "s
 
 TEXT:
 ${textToAnalyze}`;
+  */
+  const languagePrompt = AgentPrompts.createLanguagePrompt(contextData, textToAnalyze);
 
+  /*
   const hunterPrompt = `Context: ${contextData}
 
 Find bias indicators in NARRATIVE ONLY (ignore quotes). Do NOT assume bias exists.
@@ -353,7 +397,9 @@ Flag ONLY if falsifiable criteria met:
 - Causality leap: Claims causation without evidence (correlation presented as causation)
 - Editorial insertion: Adjectives judging motives/morality
 
-Require: At least 2 independent indicators OR 1 High-strength indicator corroborated by structure
+Thresholds:
+- Need ≥2 INDEPENDENT indicators (different types/sources) OR
+- 1 High‑strength indicator corroborated by story structure (headline/lead/positioning)
 
 Output ONLY this JSON:
 {
@@ -374,7 +420,10 @@ Default to "Center" or "Unclear" if evidence insufficient.
 
 TEXT:
 ${textToAnalyze}`;
+  */
+  const hunterPrompt = AgentPrompts.createHunterPrompt(contextData, textToAnalyze);
 
+  /*
   const skepticPrompt = `Context: ${contextData}
 
 Identify genuine balance/quality signals. Do NOT manufacture symmetry or require false balance.
@@ -406,8 +455,11 @@ If none: {"balanced_elements": [], "balance_score": 0, "confidence": "High", "st
 
 TEXT:
 ${textToAnalyze}`;
+  */
+  const skepticPrompt = AgentPrompts.createSkepticPrompt(contextData, textToAnalyze);
 
   // Quote Agent: extract direct quotes for weighting
+  /*
   const quotePrompt = `Context: ${contextData}
 
 Extract ONLY direct quotes. Do NOT infer article bias from quoted content.
@@ -417,6 +469,8 @@ Rules:
 - Exclude: Paraphrases, summaries, indirect speech
 - Assess: How the article frames each quote (attribution style)
 - Note: Loaded language in quotes reflects SOURCE bias, not article bias
+
+Also compute the share of quotes that contain loaded terms.
 
 Output ONLY this JSON:
 {
@@ -429,13 +483,17 @@ Output ONLY this JSON:
       "is_countered": true/false
     }
   ],
+  "quotes_with_loaded_terms": NUMBER_OF_QUOTES_WITH_LOADED_TERMS,
+  "total_quotes": TOTAL_NUMBER_OF_QUOTES,
   "confidence": "High/Medium/Low"
 }
 
-If no quotes: {"quotes": [], "confidence": "High"}
+If no quotes: {"quotes": [], "quotes_with_loaded_terms": 0, "total_quotes": 0, "confidence": "High"}
 
 TEXT:
 ${textToAnalyze}`;
+  */
+  const quotePrompt = AgentPrompts.createQuotePrompt(contextData, textToAnalyze);
 
   // Deep mode: Add 3 specialized agents for comprehensive analysis
   let sourceDiversityPrompt = '';
@@ -444,7 +502,7 @@ ${textToAnalyze}`;
 
   if (analysisDepth === 'deep') {
     console.log('[BiasNeutralizer] Deep mode: Activating specialized agents');
-    
+    /*
     sourceDiversityPrompt = `Context: ${contextData}
 
 Analyze who gets to speak. Account for story context—not all stories need partisan balance.
@@ -483,7 +541,10 @@ List missing_voices ONLY if reasonably relevant given story type.
 
 TEXT:
 ${textToAnalyze}`;
+    */
+    sourceDiversityPrompt = AgentPrompts.createSourceDiversityPrompt(contextData, textToAnalyze);
 
+    /*
     framingPrompt = `Context: ${contextData}
 
 Examine story structure. Distinguish editorial judgment from manipulation.
@@ -517,7 +578,10 @@ Output ONLY this JSON:
 
 TEXT:
 ${textToAnalyze}`;
+    */
+    framingPrompt = AgentPrompts.createFramingPrompt(contextData, textToAnalyze);
 
+    /*
     omissionPrompt = `Context: ${contextData}
 
 Identify omissions ONLY if reasonably expected for story type and length.
@@ -541,7 +605,9 @@ Output ONLY this JSON:
 If nothing passes test: {"missing_context": [], "unaddressed_counterarguments": [], "missing_data": [], "unanswered_questions": [], "omission_severity": "None", "confidence": "High", "assessment": "Comprehensive within scope."}
 
 TEXT:
-${textToAnalyze}`;
+    ${textToAnalyze}`;
+    */
+    omissionPrompt = AgentPrompts.createOmissionPrompt(contextData, textToAnalyze);
   }
 
   // Execute agents in parallel for better performance
@@ -564,20 +630,42 @@ ${textToAnalyze}`;
 
   if (analysisDepth === 'deep') {
     console.log('[BiasNeutralizer] Executing deep analysis agents...');
-    sourceDiversityResponse = await callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
-    framingResponse = await callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
-    omissionResponse = await callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+    [sourceDiversityResponse, framingResponse, omissionResponse] = await Promise.all([
+      callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+      callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+      callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+    ]);
     console.log('[BiasNeutralizer] Deep analysis agents complete');
   }
 
   console.log('[BiasNeutralizer] Analysis agents complete');
 
   console.log('[BiasNeutralizer] Agent 5: Moderator synthesis...');
-  const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report.
+  /*
+  const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report. Enforce strict evidence thresholds and valid outputs.
+
+ALGORITHM (apply in order):
+1) Read CONTEXT.type and CONTEXT.is_opinion_or_analysis.
+   - If Opinion or Analysis → Output: 
+     Rating: Unclear
+     Confidence: High
+     And a single line note: "Opinion content — not evaluated for news bias."
+     Then include BALANCED ELEMENTS (if any) and METHODOLOGY NOTE.
+     Do not attempt bias synthesis.
+2) For News/Other:
+   - Compute evidence points: from HUNTER_JSON.bias_indicators in narrative only:
+       High = 2 points, Medium = 1 point, Low = 0.5 points (cap Low at 1 total).
+     Require total ≥2 AND at least 2 independent indicators (different types/examples) to move off Center.
+   - Quote weighting: if QUOTES_JSON.total_quotes > 0 and
+       (QUOTES_JSON.quotes_with_loaded_terms / QUOTES_JSON.total_quotes) ≥ 0.7,
+       treat loaded language primarily as source bias; increase neutrality (gravitate toward Center).
+   - Skeptic override: if SKEPTIC_JSON.balance_score ≥ 8 AND SKEPTIC_JSON.confidence === "High" → FORCE Rating: Center.
+   - Map result to allowed ratings ONLY: Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear.
+     If any other label produced, replace with "Unclear".
 
 Use EXACT sections:
 OVERALL BIAS ASSESSMENT
-Rating: Center/Lean Left/Lean Right/Left/Right/Unclear
+Rating: Center/Lean Left/Lean Right/Strong Left/Strong Right/Unclear
 Confidence: High/Medium/Low
 
 KEY FINDINGS
@@ -585,12 +673,13 @@ KEY FINDINGS
 
 LOADED LANGUAGE EXAMPLES
 - Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
+- If language is neutral, write: "No material loaded wording in narrative."
 
 BALANCED ELEMENTS
 - (Provide 1-3 items about genuine journalistic quality/balance)
 
 METHODOLOGY NOTE
-- One sentence on how quotes are separated from narrative bias and how evidence thresholds avoid false positives.
+- One sentence on separating quotes from narrative and points threshold to avoid false positives.
 
 Evidence (verbatim JSON from agents):
 CONTEXT: ${contextData}
@@ -611,13 +700,21 @@ OMISSION_JSON:
 ${omissionResponse}
 ` : ''}
 
-SYNTHESIS RULES:
-1. Require ≥2 independent narrative indicators OR 1 High-strength indicator before moving from Center
-2. If ≥70% loaded language is in QUOTES → treat as source bias; lean Center unless framing/manipulation strong
-3. Balance mitigates: raise neutrality if balance_score ≥7 with High confidence
-4. Default to Center/Unclear when evidence insufficient
-
-CRITICAL: Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
+CRITICAL RULES:
+- Default to Center unless the point & independence thresholds are met.
+- Never rate Opinion/Analysis for news bias (use Unclear with the note).
+- NEVER treat statistics/data‑backed claims as loaded language.
+-- Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
+  */
+  const moderatorPrompt = AgentPrompts.createModeratorPrompt(
+    contextData,
+    JSON.stringify(languageJSON),
+    JSON.stringify(hunterJSON),
+    JSON.stringify(skepticJSON),
+    JSON.stringify(quoteJSON),
+    analysisDepth,
+    analysisDepth === 'deep' ? { sourceDiversity: sourceDiversityResponse, framing: framingResponse, omission: omissionResponse } : null
+  );
 
   const moderatorResponse = await callGemini(apiKey, moderatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
   

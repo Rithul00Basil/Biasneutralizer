@@ -39,8 +39,9 @@
         <section class="tab-panel active" role="tabpanel" id="api-panel" aria-labelledby="tab-api" data-tab="api">
           <h2 class="section-title">Cloud API Configuration</h2>
           <label class="input-label" for="gemini-api-key">Gemini API Key</label>
-          <div class="input-wrapper">
-            <input type="text" id="gemini-api-key" placeholder="Paste your Gemini API key" autocomplete="off" />
+          <div class="input-wrapper api-key-row">
+            <input type="password" id="gemini-api-key" placeholder="Paste your Gemini API key" autocomplete="off" />
+            <button id="toggle-key-visibility" type="button" class="secondary-button" aria-label="Toggle API key visibility">Show</button>
           </div>
 
           <div class="connection-status" aria-live="polite">
@@ -57,7 +58,7 @@
         </section>
 
         <section class="tab-panel" role="tabpanel" id="advanced-panel" aria-labelledby="tab-advanced" data-tab="advanced">
-          <div class="tab-section">
+          <div class="tab-section" id="bias-sensitivity" style="display:none" aria-hidden="true">
             <h2 class="section-title">Bias Detection</h2>
             <div class="radio-group" role="radiogroup" aria-label="Bias detection level">
               <label class="radio-option">
@@ -98,6 +99,6 @@
     </div>
   </div>
 
-  <script src="settings.js"></script>
+  <script src="settings.js" defer></script>
 </body>
 </html>

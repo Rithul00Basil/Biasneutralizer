@@ -8,7 +8,8 @@
     "default_title": "BiasNeutralizer"
   },
   "background": {
-    "service_worker": "background/background.js"
+    "service_worker": "background/background.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "sidepanel/sidepanel.html"
@@ -19,7 +20,7 @@
     "sidePanel"
   ],
   "host_permissions": [
-  "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*"
   ],
   "content_scripts": [
     {
@@ -30,8 +31,8 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": [ "results/results.html" ],
-      "matches": [ "<all_urls>" ]
+      "resources": ["results/results.html"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

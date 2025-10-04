@@ -4,30 +4,98 @@
   const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
   const hasRuntime = typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getURL === 'function';
 
-  const storage = {
-    async get(keys) {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      if (hasChromeStorage) {
-        return new Promise((resolve, reject) => {
-          chrome.storage.local.get(keyArray, (result) => {
-            const err = chrome.runtime && chrome.runtime.lastError;
-            if (err) reject(err); else resolve(result || {});
+  // ---- results.js storage helpers (robust) ----
+  function storageGet(keys) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+        try {
+          chrome.storage.local.get(keys, (res) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Results] storage.get error', chrome.runtime.lastError);
+              resolve({});
+            } else resolve(res || {});
           });
-        });
+        } catch (e) { console.error('[Results] storage.get exception', e); resolve({}); }
+      } else {
+        try {
+          const out = {};
+          (Array.isArray(keys) ? keys : [keys]).forEach((k) => {
+            out[k] = JSON.parse(localStorage.getItem(k));
+          });
+          resolve(out);
+        } catch { resolve({}); }
       }
-      const res = {}; keyArray.forEach(k => {
-        const raw = localStorage.getItem(k);
-        if (raw != null) { try { res[k] = JSON.parse(raw); } catch { res[k] = raw; } }
-      });
-      return res;
+    });
+  }
+
+  function storageSet(obj) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+        try {
+          chrome.storage.local.set(obj, () => {
+            if (chrome.runtime.lastError) {
+              console.error('[Results] storage.set error', chrome.runtime.lastError);
+              resolve(false);
+            } else resolve(true);
+          });
+        } catch (e) { console.error('[Results] storage.set exception', e); resolve(false); }
+      } else {
+        try {
+          Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
+          resolve(true);
+        } catch { resolve(false); }
+      }
+    });
+  }
+
+  // ---- results.js normalization (mirror of sidepanel) ----
+  function normalizeModeratorSections(markdown) {
+    const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
+    let out = String(markdown || '')
+      .replace(/\[RATING\]\s*:/gi, 'Rating:')
+      .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
+
+    out = out.replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
+      let r = String(p2 || '').trim();
+      const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
+      r = map[r] || r;
+      if (!allowed.has(r)) r = 'Unclear';
+      return p1 + r;
+    });
+
+    if (!/Confidence:\s*/i.test(out)) out += '\nConfidence: Medium';
+    out = out.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
+      let c = String(p2 || '').trim();
+      if (!['High','Medium','Low'].includes(c)) c = 'Medium';
+      return p1 + c;
+    });
+
+    if (!/^\s*##\s*Overall Bias Assessment/im.test(out)) {
+      out = '## Overall Bias Assessment\n' + out;
     }
-  };
+    return out;
+  }
+
+  function renderWhenVisible(doRender) {
+    if (document.visibilityState === 'visible') return doRender();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        document.removeEventListener('visibilitychange', onVis);
+        doRender();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+  }
+
+  let lastRenderedTs = 0;
+
+  // legacy storage wrapper removed in favor of storageGet/storageSet
 
   const els = {};
   document.addEventListener('DOMContentLoaded', async () => {
     cacheEls();
     bindEvents();
-    await loadLatest();
+    await refreshResults();
   });
 
   function cacheEls() {
@@ -45,7 +113,7 @@
   }
 
   function bindEvents() {
-    els.refresh?.addEventListener('click', loadLatest);
+    els.refresh?.addEventListener('click', refreshResults);
     els.openSidepanel?.addEventListener('click', openSidePanel);
     els.openArticle?.addEventListener('click', () => {
       if (els.title && els.title.href && els.title.href !== '#') {
@@ -54,9 +122,9 @@
     });
   }
 
-  async function loadLatest() {
+  async function refreshResults() {
     try {
-      const { lastAnalysis } = await storage.get('lastAnalysis');
+      const { lastAnalysis } = await storageGet(['lastAnalysis']);
       console.log('[BiasNeutralizer Results] ===== LOADING ANALYSIS =====');
       console.log('[BiasNeutralizer Results] lastAnalysis:', lastAnalysis);
       console.log('[BiasNeutralizer Results] lastAnalysis type:', typeof lastAnalysis);
@@ -65,7 +133,12 @@
         renderEmpty();
         return;
       }
-      render(lastAnalysis);
+      if (lastAnalysis.timestamp && lastAnalysis.timestamp === lastRenderedTs) {
+        console.log('[BiasNeutralizer Results] No change since last render.');
+        return;
+      }
+      lastRenderedTs = lastAnalysis.timestamp || Date.now();
+      renderWhenVisible(() => render(lastAnalysis));
     } catch (e) {
       console.error('[BiasNeutralizer Results] Failed to load results:', e);
       renderEmpty();
@@ -116,18 +189,22 @@
       console.log('[BiasNeutralizer Results] Using fallback from raw');
     }
     
-    console.log('[BiasNeutralizer Results] Final summaryText:', summaryText);
-    console.log('[BiasNeutralizer Results] Final summaryText length:', summaryText?.length);
-    
+    // Normalize and bound summary markdown
+    let md = normalizeModeratorSections(summaryText);
+    if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
+
+    console.log('[BiasNeutralizer Results] Final summaryText (normalized):', md);
+    console.log('[BiasNeutralizer Results] Final summaryText length:', md?.length);
+
     // Parse and render the analysis into separate cards
-    parseAndRenderAnalysis(summaryText, raw);
+    parseAndRenderAnalysis(md, raw);
 
     // Show the Bias Hero section and update bias rating display
     const biasHeroEl = document.querySelector('.bias-hero');
     if (biasHeroEl) {
       biasHeroEl.classList.remove('initially-hidden');
     }
-    const extracted = extractBiasRating(summaryText);
+    const extracted = extractBiasRating(md);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
     if (ratingEl) ratingEl.textContent = extracted.rating;
@@ -136,7 +213,7 @@
 
     // Show neutral on-device prompt only when it makes sense
     if (els.onDeviceWarning) {
-      const suggest = shouldSuggestDeep(raw, source, summaryText);
+      const suggest = shouldSuggestDeep(raw, source, md);
       els.onDeviceWarning.classList.toggle('visible', suggest);
     }
 
@@ -484,117 +561,5 @@
     });
   }
 
-  // Legacy: Safely render analysis text by building DOM nodes (prevents HTML injection)
-  function safeRenderAnalysis(container, text) {
-    console.log('[BiasNeutralizer Results] ===== RENDERING TEXT =====');
-    console.log('[BiasNeutralizer Results] text type:', typeof text);
-    console.log('[BiasNeutralizer Results] text length:', text?.length);
-    console.log('[BiasNeutralizer Results] text value:', text);
-    
-    try {
-      while (container.firstChild) container.removeChild(container.firstChild);
-      let t = (typeof text === 'string') ? text : '';
-      // normalize headings and strip triple backtick fences
-      t = t.replace(/^###\s+/gm, '## ')
-           .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ''));
-      if (!t.trim().length) {
-        console.warn('[BiasNeutralizer Results] Empty text, showing fallback message');
-        const p = document.createElement('p');
-        p.textContent = 'No analysis available.';
-        container.appendChild(p);
-        return;
-      }
-      
-      console.log('[BiasNeutralizer Results] Parsing and rendering analysis text...');
-
-      const lines = t.replace(/\r\n?/g, '\n').split('\n');
-      let ul = null;
-      let para = null;
-      const pushPara = () => {
-        if (para && para.textContent.trim().length) {
-          container.appendChild(para);
-        }
-        para = null;
-      };
-      const pushUl = () => {
-        if (ul) {
-          container.appendChild(ul);
-        }
-        ul = null;
-      };
-
-      const mkH3 = (txt) => {
-        const h = document.createElement('h3');
-        h.textContent = txt.trim();
-        h.style.color = 'var(--text-white-100)';
-        h.style.fontSize = '16px';
-        h.style.fontWeight = '600';
-        h.style.margin = '16px 0 8px 0';
-        h.style.fontFamily = 'var(--font-inter)';
-        return h;
-      };
-
-      for (let raw of lines) {
-        const line = raw.trimEnd();
-        if (!line.trim().length) {
-          // blank line: end current paragraph and list
-          pushPara();
-          pushUl();
-          continue;
-        }
-
-        // Markdown-style header
-        const headerMatch = line.match(/^###\s*(.+)$/);
-        // Or fixed headings from strict template
-        const fixedHeading = /^(OVERALL BIAS ASSESSMENT|KEY FINDINGS|BALANCED ELEMENTS|IMPORTANT RULES)$/i;
-
-        if (headerMatch) {
-          pushPara();
-          pushUl();
-          container.appendChild(mkH3(headerMatch[1]));
-          continue;
-        }
-        if (fixedHeading.test(line)) {
-          pushPara();
-          pushUl();
-          container.appendChild(mkH3(line.toUpperCase()));
-          continue;
-        }
-
-        // Bullet item
-        const bullet = line.match(/^\-\s+(.+)$/);
-        if (bullet) {
-          if (!ul) {
-            ul = document.createElement('ul');
-            ul.style.listStyle = 'disc';
-            ul.style.paddingLeft = '20px';
-          }
-          const li = document.createElement('li');
-          li.textContent = bullet[1].trim();
-          li.style.marginBottom = '6px';
-          li.style.color = 'var(--text-white-90)';
-          ul.appendChild(li);
-          continue;
-        }
-
-        // Paragraph accumulation
-        if (!para) {
-          para = document.createElement('p');
-          para.style.margin = '8px 0';
-          para.style.color = 'var(--text-white-90)';
-          para.style.lineHeight = '1.6';
-          para.textContent = line.trim();
-        } else {
-          para.textContent += '\n' + line.trim();
-        }
-      }
-
-      // flush any open structures
-      pushPara();
-      pushUl();
-    } catch (e) {
-      // Fallback: plain text
-      container.textContent = (typeof text === 'string') ? text : 'No analysis available.';
-    }
-  }
+  // legacy text renderer removed
 })();

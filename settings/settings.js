@@ -3,76 +3,67 @@
 (function() {
   'use strict';
 
+  // ---- settings.js storage helpers (robust) ----
+  async function storageGet(keys) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+        try {
+          chrome.storage.local.get(keys, (res) => {
+            if (chrome.runtime?.lastError) {
+              console.error('[Settings] storage.get error', chrome.runtime.lastError);
+              resolve({});
+            } else {
+              resolve(res || {});
+            }
+          });
+        } catch (e) { console.error('[Settings] storage.get exception', e); resolve({}); }
+      } else {
+        try {
+          const out = {};
+          (Array.isArray(keys) ? keys : [keys]).forEach(k => { out[k] = JSON.parse(localStorage.getItem(k)); });
+          resolve(out);
+        } catch { resolve({}); }
+      }
+    });
+  }
+
+  async function storageSet(obj) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
+        try {
+          chrome.storage.local.set(obj, () => {
+            if (chrome.runtime?.lastError) {
+              console.error('[Settings] storage.set error', chrome.runtime.lastError);
+              resolve(false);
+            } else resolve(true);
+          });
+        } catch (e) { console.error('[Settings] storage.set exception', e); resolve(false); }
+      } else {
+        try {
+          Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
+          resolve(true);
+        } catch { resolve(false); }
+      }
+    });
+  }
+
+  // ---- debounce helper ----
+  function debounce(fn, ms = 400) {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
   const state = {
     geminiApiKey: '',
     savedApiKey: '',
     apiConnectionStatus: 'disconnected',
     apiConnectionMessage: 'Not connected',
-    biasDetectionLevel: 'medium',
     analysisDepth: 'quick'
   };
 
   const elements = {};
   let currentTab = 'api';
 
-  const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
   const hasRuntime = typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getURL === 'function';
-
-  const storage = {
-    async get(keys) {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-
-      if (hasChromeStorage) {
-        return new Promise((resolve, reject) => {
-          chrome.storage.local.get(keyArray, (result) => {
-            const error = chrome.runtime && chrome.runtime.lastError;
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result || {});
-            }
-          });
-        });
-      }
-
-      const result = {};
-      keyArray.forEach((key) => {
-        const raw = window.localStorage.getItem(key);
-        if (raw !== null) {
-          try {
-            result[key] = JSON.parse(raw);
-          } catch (error) {
-            result[key] = raw;
-          }
-        }
-      });
-      return result;
-    },
-
-    async set(items) {
-      if (hasChromeStorage) {
-        return new Promise((resolve, reject) => {
-          chrome.storage.local.set(items, () => {
-            const error = chrome.runtime && chrome.runtime.lastError;
-            if (error) {
-              reject(error);
-            } else {
-              resolve();
-            }
-          });
-        });
-      }
-
-      Object.entries(items).forEach(([key, value]) => {
-        if (value === undefined) {
-          window.localStorage.removeItem(key);
-        } else {
-          window.localStorage.setItem(key, JSON.stringify(value));
-        }
-      });
-      return Promise.resolve();
-    }
-  };
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -87,12 +78,12 @@
     elements.tabButtons = Array.from(document.querySelectorAll('.tab-button'));
     elements.tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
     elements.apiKeyInput = document.getElementById('gemini-api-key');
+    elements.toggleKeyVisibility = document.getElementById('toggle-key-visibility');
     elements.statusIndicator = document.getElementById('connection-status-indicator');
     elements.statusText = document.getElementById('connection-status-text');
     elements.testButton = document.getElementById('test-connection');
     elements.saveButton = document.getElementById('save-api-key');
     elements.apiFeedback = document.getElementById('api-feedback');
-    elements.biasRadios = document.querySelectorAll('input[name="bias-detection"]');
     elements.analysisRadios = document.querySelectorAll('input[name="analysis-depth"]');
     elements.applyButton = document.getElementById('apply-changes');
     elements.advancedFeedback = document.getElementById('advanced-feedback');
@@ -109,6 +100,18 @@
       elements.apiKeyInput.addEventListener('input', handleApiKeyInput);
     }
 
+    if (elements.toggleKeyVisibility && elements.apiKeyInput) {
+      elements.toggleKeyVisibility.addEventListener('click', (e) => {
+        e.preventDefault();
+        const isPassword = elements.apiKeyInput.getAttribute('type') === 'password';
+        elements.apiKeyInput.setAttribute('type', isPassword ? 'text' : 'password');
+        elements.toggleKeyVisibility.textContent = isPassword ? 'Hide' : 'Show';
+        if (!state.savedApiKey && elements.apiKeyInput.value === '••••••••••') {
+          elements.apiKeyInput.value = '';
+        }
+      });
+    }
+
     if (elements.testButton) {
       elements.testButton.addEventListener('click', handleTestConnection);
     }
@@ -116,10 +119,6 @@
     if (elements.saveButton) {
       elements.saveButton.addEventListener('click', handleSaveApiKey);
     }
-
-    elements.biasRadios.forEach((radio) => {
-      radio.addEventListener('change', handleBiasSelection);
-    });
 
     elements.analysisRadios.forEach((radio) => {
       radio.addEventListener('change', handleAnalysisSelection);
@@ -136,11 +135,10 @@
 
   async function loadSettings() {
     try {
-      const stored = await storage.get([
+      const stored = await storageGet([
         'geminiApiKey',
         'apiConnectionStatus',
         'apiConnectionMessage',
-        'biasDetectionLevel',
         'analysisDepth'
       ]);
 
@@ -149,13 +147,10 @@
       state.savedApiKey = storedApiKey;
 
       if (elements.apiKeyInput) {
-        elements.apiKeyInput.value = storedApiKey;
+        elements.apiKeyInput.value = storedApiKey ? '••••••••••' : '';
       }
-
-      state.biasDetectionLevel = stored.biasDetectionLevel || state.biasDetectionLevel;
+      
       state.analysisDepth = stored.analysisDepth || state.analysisDepth;
-
-      syncRadioGroup(elements.biasRadios, state.biasDetectionLevel);
       syncRadioGroup(elements.analysisRadios, state.analysisDepth);
 
       const hasStoredStatus = storedApiKey && stored.apiConnectionStatus;
@@ -224,7 +219,20 @@
     if (state.apiConnectionStatus === 'connected' && value !== state.savedApiKey) {
       updateConnectionStatus('disconnected', 'Not connected');
     }
+    if (value && value !== '••••••••••') {
+      saveApiKeyDebounced();
+    }
   }
+
+  const saveApiKeyDebounced = debounce(async () => {
+    if (!elements.apiKeyInput) return;
+    const raw = elements.apiKeyInput.value || '';
+    const newKey = (raw === '••••••••••') ? state.savedApiKey : raw.trim();
+    const payload = { settings: { geminiApiKey: newKey, analysisDepth: state.analysisDepth || 'quick' } };
+    payload.geminiApiKey = newKey;
+    payload.analysisDepth = state.analysisDepth || 'quick';
+    await storageSet(payload);
+  }, 400);
 
   async function testGeminiApiKey(apiKey) {
     try {
@@ -294,7 +302,10 @@
     const button = event.currentTarget;
     flashButton(button);
 
-    const apiKey = (state.geminiApiKey || '').trim();
+    let apiKey = (state.geminiApiKey || '').trim();
+    if (elements.apiKeyInput && elements.apiKeyInput.value === '••••••••••') {
+      apiKey = state.savedApiKey || '';
+    }
     if (!apiKey) {
       updateConnectionStatus('error', 'API key required');
       showFeedback(elements.apiFeedback, 'Enter your Gemini API key before testing.', 'error');
@@ -313,28 +324,14 @@
         updateConnectionStatus('connected', 'Connected');
         showFeedback(elements.apiFeedback, 'Connection successful. API key is valid.', 'success');
 
-        try {
-          await storage.set({
-            apiConnectionStatus: state.apiConnectionStatus,
-            apiConnectionMessage: state.apiConnectionMessage
-          });
-        } catch (error) {
-          console.error('Failed to persist connection status:', error);
-        }
+        await storageSet({ apiConnectionStatus: state.apiConnectionStatus, apiConnectionMessage: state.apiConnectionMessage });
 
         finish('Connected', 1400);
       } else {
         updateConnectionStatus('error', 'Invalid API key');
         showFeedback(elements.apiFeedback, testResult.error || 'API key is invalid or expired.', 'error');
 
-        try {
-          await storage.set({
-            apiConnectionStatus: state.apiConnectionStatus,
-            apiConnectionMessage: state.apiConnectionMessage
-          });
-        } catch (error) {
-          console.error('Failed to persist connection status:', error);
-        }
+        await storageSet({ apiConnectionStatus: state.apiConnectionStatus, apiConnectionMessage: state.apiConnectionMessage });
 
         finish('Try Again', 1400);
       }
@@ -343,14 +340,7 @@
       updateConnectionStatus('error', 'Connection failed');
       showFeedback(elements.apiFeedback, 'Unable to connect to Gemini API. Check your internet connection.', 'error');
 
-      try {
-        await storage.set({
-          apiConnectionStatus: state.apiConnectionStatus,
-          apiConnectionMessage: state.apiConnectionMessage
-        });
-      } catch (storageError) {
-        console.error('Failed to persist connection status:', storageError);
-      }
+      await storageSet({ apiConnectionStatus: state.apiConnectionStatus, apiConnectionMessage: state.apiConnectionMessage });
 
       finish('Try Again', 1400);
     }
@@ -361,7 +351,8 @@
     flashButton(button);
     const finish = setButtonWorking(button, 'Saving...');
 
-    const apiKey = (elements.apiKeyInput ? elements.apiKeyInput.value : '').trim();
+    const raw = elements.apiKeyInput ? elements.apiKeyInput.value : '';
+    const apiKey = (raw === '••••••••••') ? state.savedApiKey : (raw || '').trim();
     state.geminiApiKey = apiKey;
     state.savedApiKey = apiKey;
 
@@ -375,26 +366,23 @@
       showFeedback(elements.apiFeedback, 'API key saved.', 'success');
     }
 
-    try {
-      await storage.set({
-        geminiApiKey: apiKey,
-        apiConnectionStatus: state.apiConnectionStatus,
-        apiConnectionMessage: state.apiConnectionMessage
-      });
-      finish(apiKey ? 'Saved!' : 'Cleared', 1400);
-    } catch (error) {
-      console.error('Failed to save API key:', error);
+    const ok = await storageSet({
+      settings: { geminiApiKey: apiKey, analysisDepth: state.analysisDepth || 'quick' },
+      geminiApiKey: apiKey,
+      analysisDepth: state.analysisDepth || 'quick',
+      apiConnectionStatus: state.apiConnectionStatus,
+      apiConnectionMessage: state.apiConnectionMessage
+    });
+    if (!ok) {
+      console.error('Failed to save API key');
       showFeedback(elements.apiFeedback, 'Unable to save API key. Try again.', 'error');
       finish('Retry', 1400);
+    } else {
+      finish(apiKey ? 'Saved!' : 'Cleared', 1400);
     }
   }
 
   // Thinking toggle removed
-
-  function handleBiasSelection(event) {
-    state.biasDetectionLevel = event.target.value;
-    showFeedback(elements.advancedFeedback, '');
-  }
 
   function handleAnalysisSelection(event) {
     state.analysisDepth = event.target.value;
@@ -407,10 +395,8 @@
     const finish = setButtonWorking(button, 'Applying...');
 
     try {
-      await storage.set({
-        biasDetectionLevel: state.biasDetectionLevel,
-        analysisDepth: state.analysisDepth
-      });
+      const ok = await storageSet({ settings: { analysisDepth: state.analysisDepth, geminiApiKey: state.savedApiKey || '' }, analysisDepth: state.analysisDepth });
+      if (!ok) throw new Error('storageSet failed');
       showFeedback(elements.advancedFeedback, 'Preferences applied.', 'success');
       finish('Applied!', 1400);
     } catch (error) {

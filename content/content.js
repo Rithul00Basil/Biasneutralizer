@@ -49,51 +49,74 @@ function extractMainContent() {
 
 function getTextLength(el) {
   try {
-    const clone = el.cloneNode(true);
-    // Remove obviously non-content areas and scripts/styles
-    const unwanted = clone.querySelectorAll(
-      'script, style, nav, header, footer, aside, .advertisement, .ads, .ad, .promo, .related, ' +
-      '.sidebar, .comments, [role="banner"], [role="navigation"], [role="complementary"], [hidden]'
-    );
-    unwanted.forEach((n) => n.remove());
+    const clone = cleanClone(el);
     const text = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
     return text.length;
-  } catch {
-    return 0;
+  } catch { return 0; }
+}
+
+// Picks best article root AND returns a pre-cleaned clone to avoid double work
+function pickBestContentRoot() {
+  const candidates = [
+    ...document.querySelectorAll('article, [role="main"], main, .article-content, .post-content, #content, .entry-content')
+  ];
+  let best = null, bestLen = 0, bestClean = null;
+
+  function consider(el) {
+    try {
+      const c = cleanClone(el);
+      const s = (c.innerText || c.textContent || '').replace(/\s+/g, ' ').trim();
+      if (s.length > bestLen) { best = el; bestLen = s.length; bestClean = c; }
+    } catch {}
   }
+
+  if (candidates.length) candidates.forEach(consider);
+  if (!best) {
+    document.querySelectorAll('section, div').forEach(el => {
+      if (el.closest('nav,header,footer,aside')) return;
+      consider(el);
+    });
+  }
+
+  if (!best || bestLen <= 200) {
+    const bodyClean = cleanClone(document.body);
+    return { element: document.body, cleanedClone: bodyClean, textLength: (bodyClean.innerText || '').length };
+  }
+  return { element: best, cleanedClone: bestClean, textLength: bestLen };
 }
 
 function extractTextFromElement(element) {
-  const clone = element.cloneNode(true);
-  const unwanted = clone.querySelectorAll(
-    'script, style, nav, header, footer, aside, .advertisement, ' +
-    '.sidebar, .comments, [role="banner"], [role="navigation"], ' +
-    '[role="complementary"], [hidden]'
-  );
-  unwanted.forEach(el => el.remove());
-  
-  const headlines = Array.from(clone.querySelectorAll('h1, h2, h3'))
-    .map(h => h.textContent.trim());
-  
-  const paragraphs = Array.from(clone.querySelectorAll('p'))
-    .map(p => p.textContent.trim())
-    .filter(text => text.length > 20);
-  
-  const fullText = (clone.innerText || clone.textContent || '').trim().replace(/\s+/g, ' ');
-  
-  return {
-    url: window.location.href,
-    title: document.title,
-    headlines,
-    paragraphs,
-    fullText: fullText.slice(0, 50000)
-  };
+  const cleaned = element && element.__BN_CLEANED_CLONE__ ? element.__BN_CLEANED_CLONE__ : cleanClone(element || document.body);
+  const headlines = Array.from(cleaned.querySelectorAll('h1, h2'))
+    .map(h => h.textContent.trim()).filter(Boolean).slice(0, 5);
+  const paraAll = Array.from(cleaned.querySelectorAll('p'))
+    .map(p => p.textContent.trim()).filter(Boolean);
+  const paragraphs = paraAll.slice(0, 25); // cap to reduce payload
+  const rawText = (cleaned.innerText || cleaned.textContent || '').replace(/\s+/g, ' ').trim();
+  const fullText = rawText.slice(0, Math.min(30000, rawText.length)); // 30k cap
+  return { url: window.location.href, title: document.title, headlines, paragraphs, fullText };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_CONTENT') {
-    const mainElement = extractMainContent();
-    const content = extractTextFromElement(mainElement);
+    const { element, cleanedClone } = pickBestContentRoot();
+    try { Object.defineProperty(element, '__BN_CLEANED_CLONE__', { value: cleanedClone, enumerable: false }); } catch {}
+    const content = extractTextFromElement(element);
     sendResponse(content);
   }
 });
+// ---- BiasNeutralizer: shared cleanup config (content.js) ----
+const UNWANTED_SELECTORS = [
+  'script','style','nav','header','footer','aside',
+  '.advertisement','.ads','.ad','.promo','.related',
+  '.sidebar','.comments',
+  '[role="banner"]','[role="navigation"]','[role="complementary"]',
+  '[hidden]'
+].join(', ');
+
+function cleanClone(el) {
+  const clone = el.cloneNode(true);
+  const unwanted = clone.querySelectorAll(UNWANTED_SELECTORS);
+  unwanted.forEach(n => n.remove());
+  return clone;
+}
