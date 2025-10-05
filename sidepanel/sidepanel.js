@@ -34,110 +34,123 @@ document.addEventListener('DOMContentLoaded', () => {
   function deriveQuickModeratorMarkdown(contextJSON, languageJSON, hunterJSON, skepticJSON, quoteJSON) {
     const t = String(contextJSON?.type || '').toLowerCase();
     const isOpinionAnalysis = !!contextJSON?.is_opinion_or_analysis || t === 'opinion' || t === 'analysis';
+
+    // Handle Opinion/Analysis Content
     if (isOpinionAnalysis) {
       return [
-        '## Overall Bias Assessment',
-        'Rating: Unclear',
-        'Confidence: High',
+        '### Findings',
+        '- **Overall Bias Assessment:** Unclear',
+        '- **Confidence:** High',
+        '- **Key Observation:** This content was identified as Opinion/Analysis and was not evaluated for news bias.',
         '',
-        'Opinion content — not evaluated for news bias.',
+        '### Biased Languages Used',
+        '- Not applicable for opinion content.',
         '',
-        '### Balanced Elements',
-        '- Opinion/analysis detected; skipping news-bias scoring.',
+        '### Neutral Languages Used',
+        (skepticJSON?.balanced_elements?.length ? `- ${skepticJSON.balanced_elements[0].explanation}` : '- Not applicable for opinion content.'),
         '',
         '### Methodology Note',
-        'Quotes are separated from narrative; opinion pieces are not rated for news bias.'
+        '- Opinion and analysis pieces are not rated for journalistic bias as they are inherently subjective.'
       ].join('\n');
     }
 
+    // Calculate Evidence Points
     const indicators = Array.isArray(hunterJSON?.bias_indicators) ? hunterJSON.bias_indicators : [];
     let points = 0;
     let lowPoints = 0;
-    const typesSeen = new Set();
+    const typesSeen = new Set(indicators.map(ind => ind.type));
     indicators.forEach(ind => {
       const str = String(ind?.strength || '').toLowerCase();
-      const type = String(ind?.type || 'Unknown');
       if (str === 'high') points += 2;
       else if (str === 'medium') points += 1;
       else if (str === 'low') lowPoints += 0.5;
-      typesSeen.add(type);
     });
     points += Math.min(lowPoints, 1);
 
-    const qt = Number(quoteJSON?.total_quotes || 0);
-    const ql = Number(quoteJSON?.quotes_with_loaded_terms || 0);
-    const quoteLoadedRatio = qt > 0 ? (ql / qt) : 0;
-    const heavySourceBias = quoteLoadedRatio >= 0.7;
-    const pointsNeeded = heavySourceBias ? 3 : 2;
-
+    // Skeptic Override
     const balanceScore = Number(skepticJSON?.balance_score || 0);
-    const skepticConf = String(skepticJSON?.confidence || 'High');
+    const skepticConf = String(skepticJSON?.confidence || 'Low');
     if (balanceScore >= 8 && skepticConf === 'High') {
-      return [
-        '## Overall Bias Assessment',
-        'Rating: Center',
-        'Confidence: High',
-        '',
-        '### Key Findings',
-        '- Strong balance (balance_score ≥ 8) with high confidence.',
-        '',
-        '### Loaded Language Examples',
-        (languageJSON?.loaded_phrases?.length ? '- Some loaded phrases present, but overall balance holds.' : 'No material loaded wording in narrative.'),
-        '',
-        '### Balanced Elements',
-        '- Credible sourcing/attribution and proportionate counter-perspectives.',
-        '',
+      const findings = [
+        '### Findings',
+        '- **Overall Bias Assessment:** Center',
+        '- **Confidence:** High',
+        '- **Key Observation:** The article demonstrates exemplary balance, overriding other potential bias indicators.',
+      ];
+      const biasedLanguage = (languageJSON?.loaded_phrases?.length)
+        ? languageJSON.loaded_phrases.slice(0, 3).map(p => `- **"${p.phrase}"**: ${p.explanation}.`)
+        : ['- No significant loaded or biased language was identified in the narrative.'];
+      const neutralElements = (skepticJSON?.balanced_elements?.length)
+        ? skepticJSON.balanced_elements.slice(0, 2).map(el => `- ${el.explanation}.`)
+        : ['- Multiple perspectives were included and sourced transparently.'];
+      const methodology = [
         '### Methodology Note',
-        'Used points threshold and source-bias weighting; quotes don’t count as narrative bias.'
+        `- This 'Center' rating was determined by a high balance score (${balanceScore}/10), which overrides minor instances of loaded language.`
+      ];
+      return [
+        ...findings,
+        '',
+        '### Biased Languages Used',
+        ...biasedLanguage,
+        '',
+        '### Neutral Languages Used',
+        ...neutralElements,
+        '',
+        ...methodology
       ].join('\n');
     }
 
-    let dir = String(hunterJSON?.overall_bias || 'Center');
-    const norm = dir.toLowerCase();
-    const isLeft = norm.includes('left');
-    const isRight = norm.includes('right');
-
+    // Determine Rating
     let rating = 'Center';
-    if (points >= pointsNeeded && typesSeen.size >= 2) {
-      if (isLeft) rating = points >= 4 ? 'Strong Left' : 'Lean Left';
-      else if (isRight) rating = points >= 4 ? 'Strong Right' : 'Lean Right';
-      else rating = 'Lean Left';
+    const dir = String(hunterJSON?.overall_bias || 'Center').toLowerCase();
+    if (points >= 2 && typesSeen.size >= 2) {
+      if (dir.includes('left')) rating = points >= 4 ? 'Strong Left' : 'Lean Left';
+      else if (dir.includes('right')) rating = points >= 4 ? 'Strong Right' : 'Lean Right';
     }
 
+    // Determine Confidence
     let confidence = 'Medium';
-    if (points === 0 || (points < pointsNeeded && balanceScore >= 6)) confidence = 'High';
+    if (points === 0 || (points < 2 && balanceScore >= 6)) confidence = 'High';
     if (points >= 4 && typesSeen.size >= 3) confidence = 'High';
 
-    const keyFindings = [];
-    if (points === 0) keyFindings.push('- Narrative reads factual/neutral with no substantive indicators.');
-    else keyFindings.push(`- Evidence points: ${points.toFixed(1)} across ${typesSeen.size} independent indicators.`);
-    if (heavySourceBias) keyFindings.push('- Loaded phrasing occurs mainly inside quotes (source bias).');
-    if (balanceScore) keyFindings.push(`- Balance score: ${balanceScore}/10.`);
+    // Build Report Sections
+    const keyObservation = rating === 'Center'
+      ? 'The article maintains a generally neutral tone and adheres to journalistic standards.'
+      : `The rating was influenced by ${points.toFixed(1)} evidence points across ${typesSeen.size} indicator types.`;
 
-    const languageLines = (Array.isArray(languageJSON?.loaded_phrases) && languageJSON.loaded_phrases.length)
-      ? languageJSON.loaded_phrases.slice(0, 4).map(p => `- "${p.phrase}" — ${p.explanation || 'loaded'}; neutral: ${p.neutral_alternative || '—'}`)
-      : ['No material loaded wording in narrative.'];
+    const findings = [
+      '### Findings',
+      `- **Overall Bias Assessment:** ${rating}`,
+      `- **Confidence:** ${confidence}`,
+      `- **Key Observation:** ${keyObservation}`,
+    ];
+
+    const biasedLanguage = (languageJSON?.loaded_phrases?.length)
+      ? languageJSON.loaded_phrases.slice(0, 3).map(p => `- **"${p.phrase}"**: ${p.explanation || 'This phrase is emotionally charged or speculative'}. A neutral alternative is "${p.neutral_alternative}".`)
+      : ['- No significant loaded or biased language was identified in the narrative.'];
+
+    const neutralElements = (skepticJSON?.balanced_elements?.length)
+      ? skepticJSON.balanced_elements.slice(0, 2).map(el => `- **${el.type}:** ${el.explanation}.`)
+      : ['- The article provides basic factual reporting.'];
+
+    const methodology = [
+      '### Methodology Note',
+      `- The '${rating}' rating is based on a multi-factor analysis, including ${points.toFixed(1)} bias evidence points and a balance score of ${balanceScore}/10.`
+    ];
 
     return [
-      '## Overall Bias Assessment',
-      `Rating: ${rating}`,
-      `Confidence: ${confidence}`,
+      ...findings,
       '',
-      '### Key Findings',
-      ...keyFindings,
+      '### Biased Languages Used',
+      ...biasedLanguage,
       '',
-      '### Loaded Language Examples',
-      ...languageLines,
+      '### Neutral Languages Used',
+      ...neutralElements,
       '',
-      '### Balanced Elements',
-      (Array.isArray(skepticJSON?.balanced_elements) && skepticJSON.balanced_elements.length
-        ? '- ' + (skepticJSON.balanced_elements[0].explanation || 'Shows balance')
-        : '- None notable.'),
-      '',
-      '### Methodology Note',
-      'Applied points threshold (High=2, Medium=1, Low≤1 total), quote weighting (≥70% in quotes ⇒ source bias), and Skeptic override (balance ≥8 ⇒ Center).'
+      ...methodology
     ].join('\n');
   }
+
   // ========================================
   // CONSTANTS
   // ========================================

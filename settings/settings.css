@@ -201,6 +201,11 @@ body {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
+/* Ensure room for the inline visibility icon */
+.api-key-row input {
+  padding-right: 52px;
+}
+
 .input-wrapper input::placeholder {
   color: var(--text-white-60, rgba(255, 255, 255, 0.6));
 }
@@ -447,4 +452,68 @@ body {
 
 .toggle.on .toggle-knob {
   margin-left: 19px;
+}
+
+/* Icon button for API key visibility */
+#toggle-key-visibility {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: inline-block;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+#toggle-key-visibility:focus-visible {
+  outline: 2px solid rgba(233, 121, 41, 0.85);
+  outline-offset: 2px;
+}
+
+#toggle-key-visibility:hover {
+  filter: brightness(1.05);
+}
+
+/* Stack both icons and cross-fade/scale them */
+#toggle-key-visibility svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.92) rotate(-2deg);
+  opacity: 0;
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.7, 0.1, 1);
+  will-change: opacity, transform;
+  pointer-events: none;
+}
+
+#toggle-key-visibility svg.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1) rotate(0deg);
+}
+
+/* Ensure SVG stroke color follows theme */
+#toggle-key-visibility svg path,
+#toggle-key-visibility svg circle {
+  stroke: var(--text-white-80, rgba(255,255,255,.8));
+}
+
+#toggle-key-visibility:hover svg path,
+#toggle-key-visibility:hover svg circle {
+  stroke: var(--text-white-100, #fff);
+}
+
+/* Fun micro-interaction on toggle */
+@keyframes icon-pop {
+  0% { transform: translate(-50%, -50%) scale(0.85) rotate(-8deg); opacity: 0; }
+  60% { transform: translate(-50%, -50%) scale(1.08) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+#toggle-key-visibility svg.popping {
+  animation: icon-pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }

@@ -254,46 +254,29 @@ OMISSION_JSON:
 ${deepAnalysisResponses.omission}
 ` : '';
 
-    return `You are the Moderator. Merge the agent evidence into a neutral, methodical report. Enforce strict evidence thresholds and valid outputs.
+    return `You are the Moderator. Your task is to merge the agent evidence into a neutral, methodical report. You must adhere to strict evidence thresholds.
 
 ALGORITHM (apply in order):
-1) Read CONTEXT.type and CONTEXT.is_opinion_or_analysis.
-   - If Opinion or Analysis → Output: 
-     Rating: Unclear
-     Confidence: High
-     And a single line note: "Opinion content — not evaluated for news bias."
-     Then include BALANCED ELEMENTS (if any) and METHODOLOGY NOTE.
-     Do not attempt bias synthesis.
-2) For News/Other:
-   - Compute evidence points: from HUNTER_JSON.bias_indicators in narrative only:
-       High = 2 points, Medium = 1 point, Low = 0.5 points (cap Low at 1 total).
-     Require total ≥2 AND at least 2 independent indicators (different types/examples) to move off Center.
-   - Quote weighting: if QUOTES_JSON.total_quotes > 0 and
-       (QUOTES_JSON.quotes_with_loaded_terms / QUOTES_JSON.total_quotes) ≥ 0.7,
-       treat loaded language primarily as source bias; increase neutrality (gravitate toward Center).
-   - Skeptic override: if SKEPTIC_JSON.balance_score ≥ 8 AND SKEPTIC_JSON.confidence === "High" → FORCE Rating: Center.
-   - Map result to allowed ratings ONLY: Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear.
-     If any other label produced, replace with "Unclear".
+1) Analyze CONTEXT. If "is_opinion_or_analysis" is true, your primary rating MUST be "Unclear."
+2) For News content, compute evidence points from HUNTER_JSON.bias_indicators: High=2, Medium=1, Low=0.5 (max 1 total from Low). A total score of 2 or more from at least 2 independent indicators is required to move the rating from "Center."
+3) If SKEPTIC_JSON.balance_score is 8 or higher with "High" confidence, you MUST override the rating to "Center."
+4) Use the evidence to populate the sections below EXACTLY as specified.
 
-Use EXACT sections:
-OVERALL BIAS ASSESSMENT
-Rating: Center/Lean Left/Lean Right/Strong Left/Strong Right/Unclear
-Confidence: High/Medium/Low
+### Findings
+- **Overall Bias Assessment:** [Your calculated rating: Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear]
+- **Confidence:** [High | Medium | Low]
+- **Key Observation:** [A one-sentence summary of the most significant factor influencing your rating, e.g., "The article maintains a neutral tone with strong source balance."]
 
-KEY FINDINGS
-- (Provide 2-4 items about REPORTING choices, not quoted content)
+### Biased Languages Used
+- [List 2-4 of the most significant "loaded_phrases" from LANGUAGE_JSON. For each, provide the phrase, a brief explanation, and the neutral alternative. If none, state: "No significant loaded or biased language was identified in the narrative." ]
 
-LOADED LANGUAGE EXAMPLES
-- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
-- If language is neutral, write: "No material loaded wording in narrative."
+### Neutral Languages Used
+- [List 1-3 of the most impactful "balanced_elements" from SKEPTIC_JSON. For each, describe the element and why it contributes to neutrality.]
 
-BALANCED ELEMENTS
-- (Provide 1-3 items about genuine journalistic quality/balance)
+### Methodology Note
+- [Write a brief, DYNAMIC sentence explaining the logic for THIS specific analysis. Example: "This 'Center' rating was determined by a high balance score (9/10), which overrides minor instances of loaded language." or "The 'Lean Left' rating is based on multiple bias indicators, including selective framing and unbalanced sourcing."]
 
-METHODOLOGY NOTE
-- One sentence on separating quotes from narrative and points threshold to avoid false positives.
-
-Evidence (verbatim JSON from agents):
+### Raw Agent Evidence (for your use only)
 CONTEXT: ${contextData}
 LANGUAGE_JSON:
 ${languageResponse}
@@ -304,11 +287,6 @@ ${skepticResponse}
 QUOTES_JSON:
 ${quoteResponse}
 ${deepSection}
-
-CRITICAL RULES:
-- Default to Center unless the point & independence thresholds are met.
-- Never rate Opinion/Analysis for news bias (use Unclear with the note).
-- NEVER treat statistics/data-backed claims as loaded language.
-- Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
+`;
   }
 };

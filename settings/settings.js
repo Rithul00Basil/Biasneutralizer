@@ -69,6 +69,8 @@
 
   function init() {
     cacheElements();
+    // Ensure the visibility icon reflects current input type on load
+    syncVisibilityToggleIcon();
     bindEvents();
     activateTab(currentTab);
     loadSettings();
@@ -79,6 +81,9 @@
     elements.tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
     elements.apiKeyInput = document.getElementById('gemini-api-key');
     elements.toggleKeyVisibility = document.getElementById('toggle-key-visibility');
+    // Eye icons within the toggle button
+    elements.eyeIcon = document.querySelector('.eye-icon');
+    elements.eyeOffIcon = document.querySelector('.eye-off-icon');
     elements.statusIndicator = document.getElementById('connection-status-indicator');
     elements.statusText = document.getElementById('connection-status-text');
     elements.testButton = document.getElementById('test-connection');
@@ -103,9 +108,9 @@
     if (elements.toggleKeyVisibility && elements.apiKeyInput) {
       elements.toggleKeyVisibility.addEventListener('click', (e) => {
         e.preventDefault();
-        const isPassword = elements.apiKeyInput.getAttribute('type') === 'password';
-        elements.apiKeyInput.setAttribute('type', isPassword ? 'text' : 'password');
-        elements.toggleKeyVisibility.textContent = isPassword ? 'Hide' : 'Show';
+        const wasPassword = elements.apiKeyInput.getAttribute('type') === 'password';
+        elements.apiKeyInput.setAttribute('type', wasPassword ? 'text' : 'password');
+        syncVisibilityToggleIcon();
         if (!state.savedApiKey && elements.apiKeyInput.value === '••••••••••') {
           elements.apiKeyInput.value = '';
         }
@@ -131,6 +136,35 @@
     if (elements.backButton) {
       elements.backButton.addEventListener('click', navigateBack);
     }
+  }
+
+  // Sync the eye icons state based on the input's current type
+  function syncVisibilityToggleIcon() {
+    if (!elements || !elements.toggleKeyVisibility || !elements.apiKeyInput) return;
+    const isPasswordNow = elements.apiKeyInput.getAttribute('type') === 'password';
+    const eye = elements.eyeIcon || elements.toggleKeyVisibility.querySelector('.eye-icon');
+    const eyeOff = elements.eyeOffIcon || elements.toggleKeyVisibility.querySelector('.eye-off-icon');
+
+    if (eye && eyeOff) {
+      // Toggle visible class
+      eye.classList.toggle('is-visible', isPasswordNow);
+      eyeOff.classList.toggle('is-visible', !isPasswordNow);
+
+      // Trigger a subtle pop animation on the icon becoming visible
+      const nowVisible = isPasswordNow ? eye : eyeOff;
+      if (nowVisible) {
+        nowVisible.classList.remove('popping');
+        // Force reflow to restart animation
+        void nowVisible.offsetWidth;
+        nowVisible.classList.add('popping');
+        setTimeout(() => nowVisible.classList.remove('popping'), 280);
+      }
+    }
+
+    // Update accessible label and title
+    const label = isPasswordNow ? 'Show API key' : 'Hide API key';
+    elements.toggleKeyVisibility.setAttribute('aria-label', label);
+    elements.toggleKeyVisibility.setAttribute('title', label);
   }
 
   async function loadSettings() {
@@ -240,13 +274,13 @@
       const testPayload = {
         contents: [{
           parts: [{
-            text: "Hello, this is a test message."
+            text: "just testing if api works!"
           }]
         }]
       };
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/Gemini 2.5 Flash-Lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {

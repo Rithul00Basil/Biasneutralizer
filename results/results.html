@@ -43,9 +43,7 @@
       <span class="warning-text"><strong>Private (On-device)</strong> — fast, offline, privacy-preserving. <br><strong>Deep (Cloud)</strong> — opt-in for very long articles, multi-source compare, or heavy reasoning.</span>
     </div>
 
-    <div class="results-card">
-      <div class="card-background"></div>
-      <div class="card-content results-card-content">
+    <div class="results-card-content">
         <header class="report-header">
           <div class="report-meta">
             <a id="article-title" class="article-title" href="#" target="_blank" rel="noopener">No analysis yet</a>
@@ -58,49 +56,50 @@
           </div>
           <div class="report-actions">
             <button class="primary-button" id="open-article" disabled>Open Article</button>
-            <button class="primary-button" id="refresh-results">Refresh</button>
           </div>
         </header>
 
-        <!-- Analysis Results Cards -->
-        <div class="analysis-cards-container">
-          <!-- Card 1: Key Findings -->
+    </div>
+
+    <!-- Analysis Results Cards -->
+    <div class="analysis-cards-container">
+          <!-- Card 1: Findings -->
           <div class="analysis-card">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
                 <span class="card-icon">🔍</span>
-                <h2 class="card-title">Key Findings</h2>
+                <h2 class="card-title">Findings</h2>
               </div>
-              <div class="card-body" id="key-findings-content">
+              <div class="card-body" id="findings-content">
                 <p class="placeholder-text">Run a scan from the side panel to see results here.</p>
               </div>
             </div>
           </div>
 
-          <!-- Card 2: Loaded Language Examples -->
+          <!-- Card 2: Biased Languages Used -->
           <div class="analysis-card">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
                 <span class="card-icon">⚠️</span>
-                <h2 class="card-title">Loaded Language Examples</h2>
+                <h2 class="card-title">Biased Languages Used</h2>
               </div>
-              <div class="card-body" id="loaded-language-content">
+              <div class="card-body" id="biased-languages-content">
                 <p class="placeholder-text">No data available</p>
               </div>
             </div>
           </div>
 
-          <!-- Card 3: Balanced Elements -->
+          <!-- Card 3: Neutral Languages Used -->
           <div class="analysis-card">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
                 <span class="card-icon">✓</span>
-                <h2 class="card-title">Balanced Elements</h2>
+                <h2 class="card-title">Neutral Languages Used</h2>
               </div>
-              <div class="card-body" id="balanced-elements-content">
+              <div class="card-body" id="neutral-languages-content">
                 <p class="placeholder-text">No data available</p>
               </div>
             </div>
@@ -123,8 +122,6 @@
             </div>
           </details>
         </div>
-      </div>
-    </div>
   </div>
 
   <script src="results.js" type="module"></script>

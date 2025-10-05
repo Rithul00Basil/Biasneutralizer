@@ -41,7 +41,19 @@
           <label class="input-label" for="gemini-api-key">Gemini API Key</label>
           <div class="input-wrapper api-key-row">
             <input type="password" id="gemini-api-key" placeholder="Paste your Gemini API key" autocomplete="off" />
-            <button id="toggle-key-visibility" type="button" class="secondary-button" aria-label="Toggle API key visibility">Show</button>
+            <button id="toggle-key-visibility" type="button" class="secondary-button" aria-label="Show API key" title="Show API key">
+              <!-- Open eye icon -->
+              <svg class="eye-icon is-visible" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                <path d="M1 12S4 4 12 4S23 12 23 12S20 20 12 20S1 12 1 12Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="white" stroke-width="2"/>
+              </svg>
+              <!-- Slashed eye icon -->
+              <svg class="eye-off-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                <path d="M1 12S4 4 12 4S23 12 23 12S20 20 12 20S1 12 1 12Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="3" stroke="white" stroke-width="2"/>
+                <path d="M3 3L21 21" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
 
           <div class="connection-status" aria-live="polite">
