@@ -23,7 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getModelNameForDepth(depth) {
-    return depth === 'deep' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    // Deep tasks: gemini-2.5-pro; Fast tasks: gemini-flash-latest
+    return depth === 'deep' ? 'gemini-2.5-pro' : 'gemini-flash-latest';
   }
 
   // === on-device quick-scan helpers ===

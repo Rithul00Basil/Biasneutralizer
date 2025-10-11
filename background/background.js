@@ -57,10 +57,11 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
   const { normalize = true, retries = 3 } = opts;
 
   const isDeep = analysisDepth === 'deep';
-  const primary = isDeep ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+  // Deep: gemini-2.5-pro; Fast: gemini-flash-latest
+  const primary = isDeep ? 'gemini-2.5-pro' : 'gemini-flash-latest';
   const fallbacks = isDeep
     ? ['gemini-2.5-pro-exp-0827', 'gemini-2.0-pro-exp']
-    : ['gemini-2.5-flash-latest', 'gemini-2.0-flash-lite'];
+    : ['gemini-2.5-flash', 'gemini-2.0-flash-lite'];
   const models = [primary, ...fallbacks];
 
   let lastErr;
@@ -150,6 +151,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'CANCEL_SCAN') {
     handleCancelScan(sender);
+    return false;
+  }
+
+  if (message.type === 'OPEN_RESULTS_PAGE') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('results/results.html') })
+      .then(() => {
+        console.log('[BiasNeutralizer] Results page opened');
+      })
+      .catch((error) => {
+        console.error('[BiasNeutralizer] Failed to open results page:', error);
+      });
     return false;
   }
 });
@@ -248,8 +260,28 @@ async function handleScanRequest(message, sender, sendResponse) {
       type: 'SCAN_COMPLETE',
       results: result
     });
-    
+
     console.log('[BiasNeutralizer] Response sent to sidepanel');
+
+    // Send highlighting data to content script for both biased and neutral phrases
+    const hasBiasedPhrases = result.languageAnalysis && result.languageAnalysis.length > 0;
+    const hasNeutralPhrases = result.balancedElements && result.balancedElements.length > 0;
+
+    if ((hasBiasedPhrases || hasNeutralPhrases) && tabId) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'HIGHLIGHT_DATA',
+          biasedPhrases: result.languageAnalysis || [],
+          neutralPhrases: result.balancedElements || []
+        });
+        console.log('[BiasNeutralizer] Highlight data sent to content script:', {
+          biasedCount: result.languageAnalysis?.length || 0,
+          neutralCount: result.balancedElements?.length || 0
+        });
+      } catch (error) {
+        console.warn('[BiasNeutralizer] Failed to send highlight data:', error);
+      }
+    }
 
   } catch (error) {
     console.error('[BiasNeutralizer] Scan failed:', error);

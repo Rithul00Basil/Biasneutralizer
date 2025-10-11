@@ -17,7 +17,11 @@
 </head>
 <body>
   <div class="panel-container results-container">
-    <!-- Floating Background Orbs -->
+    <!-- Loading State: visible by default -->
+    <div id="loading-state" class="loading-state">
+      <div class="spinner"></div>
+      <div class="loading-text">Loading Analysis...</div>
+    </div>
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
     <div class="orb orb-3"></div>
@@ -29,7 +33,7 @@
         </div>
         <h1 class="product-name">BiasNeutralizer</h1>
       </a>
-      <button id="back-to-sidepanel" class="back-link" aria-label="Back to Sidepanel">
+      <button id="back-to-sidepanel" class="back-link" aria-label="Back to sidepanel">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="24"
@@ -44,17 +48,11 @@
           <line x1="5" y1="12" x2="19" y2="12"></line>
           <polyline points="12 5 19 12 12 19"></polyline>
         </svg>
-        Back to Sidepanel
+        Back to sidepanel
       </button>
     </header>
 
-    <main class="results-main-content">
-      <!-- Loading State -->
-      <div class="loading-state" id="loading-state">
-        <div class="loading-spinner"></div>
-        <p class="loading-text">Loading analysis results...</p>
-      </div>
-
+    <main id="main-content" class="results-main-content hidden">
       <div class="bias-hero initially-hidden">
         <div class="hero-rating-visual">
           <div class="bias-rating-container">
@@ -79,7 +77,11 @@
               <span class="source-chip" id="analysis-source" hidden>—</span>
             </div>
           </div>
-          
+          <div class="report-actions">
+            <button class="primary-button" id="open-article" disabled>
+              <span>Open Article</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -96,12 +98,12 @@
 
 
       <div class="analysis-cards-container">
-          <!-- Card 1: Article Summary (moved above Findings) -->
-          <div class="analysis-card" id="article-summary-card">
+          <!-- Article Summary (new first card) -->
+          <div class="analysis-card analysis-card--summary">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">📄</span>
+                <span class="card-icon">📝</span>
                 <h2 class="card-title">Article Summary</h2>
               </div>
               <div class="card-body" id="summary-content">
@@ -110,7 +112,6 @@
             </div>
           </div>
 
-          <!-- Card 2: Findings -->
           <div class="analysis-card analysis-card--findings">
             <div class="card-background"></div>
             <div class="card-content">
@@ -124,14 +125,13 @@
             </div>
           </div>
 
-          <!-- Card 3: Tribunal Verdicts (NEW) -->
-          <div class="analysis-card analysis-card--tribunal" id="tribunal-verdicts-card" style="display: none;">
+          <!-- Tribunal Verdicts (new) -->
+          <div class="analysis-card" id="tribunal-verdicts-card" style="display: none;">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
                 <span class="card-icon">⚖️</span>
                 <h2 class="card-title">Tribunal Verdicts</h2>
-                <p class="card-subtitle">Adversarial debate between Prosecutor and Defense</p>
               </div>
               <div class="card-body" id="tribunal-verdicts-content">
                 <p class="placeholder-text">No tribunal data available</p>
@@ -139,7 +139,20 @@
             </div>
           </div>
 
-          <!-- Card 4: Biased Languages Used -->
+          <!-- Structural Analysis (new) -->
+          <div class="analysis-card" id="structural-analysis-card" style="display: none;">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">📊</span>
+                <h2 class="card-title">Structural Analysis</h2>
+              </div>
+              <div class="card-body" id="structural-analysis-content">
+                <p class="placeholder-text">No structural metrics available</p>
+              </div>
+            </div>
+          </div>
+
           <div class="analysis-card analysis-card--warning">
             <div class="card-background"></div>
             <div class="card-content">
@@ -153,7 +166,6 @@
             </div>
           </div>
 
-          <!-- Card 5: Neutral Languages Used -->
           <div class="analysis-card analysis-card--success">
             <div class="card-background"></div>
             <div class="card-content">
@@ -167,7 +179,6 @@
             </div>
           </div>
 
-          <!-- Card 6: Methodology Note (Collapsible) -->
           <details class="analysis-card methodology-card">
             <summary class="card-header collapsible">
               <span class="card-icon">📋</span>
@@ -208,7 +219,6 @@
       </div>
   </div>
 
-  <script src="../shared/purify.min.js"></script>
   <script src="results.js" type="module"></script>
 </body>
 </html>

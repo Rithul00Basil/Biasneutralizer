@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  // ========================================
+  // SUMMARY LOADER
+  // ========================================
   async function loadAndRenderSummary(targetElement) {
     const { lastSummary } = await storageGet(['lastSummary']);
 
@@ -28,10 +31,9 @@
     }
   }
 
-  const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
-  const hasRuntime = typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getURL === 'function';
-
-  // ---- results.js storage helpers (robust) ----
+  // ========================================
+  // STORAGE HELPERS
+  // ========================================
   function storageGet(keys) {
     return new Promise((resolve) => {
       if (typeof chrome !== 'undefined' && chrome?.storage?.local) {
@@ -42,7 +44,10 @@
               resolve({});
             } else resolve(res || {});
           });
-        } catch (e) { console.error('[Results] storage.get exception', e); resolve({}); }
+        } catch (e) { 
+          console.error('[Results] storage.get exception', e); 
+          resolve({}); 
+        }
       } else {
         try {
           const out = {};
@@ -50,7 +55,9 @@
             out[k] = JSON.parse(localStorage.getItem(k));
           });
           resolve(out);
-        } catch { resolve({}); }
+        } catch { 
+          resolve({}); 
+        }
       }
     });
   }
@@ -65,17 +72,24 @@
               resolve(false);
             } else resolve(true);
           });
-        } catch (e) { console.error('[Results] storage.set exception', e); resolve(false); }
+        } catch (e) { 
+          console.error('[Results] storage.set exception', e); 
+          resolve(false); 
+        }
       } else {
         try {
           Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, JSON.stringify(v)));
           resolve(true);
-        } catch { resolve(false); }
+        } catch { 
+          resolve(false); 
+        }
       }
     });
   }
 
-  // ---- results.js normalization (mirror of sidepanel) ----
+  // ========================================
+  // NORMALIZATION
+  // ========================================
   function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
     let out = String(markdown || '')
@@ -114,17 +128,27 @@
     document.addEventListener('visibilitychange', onVis);
   }
 
+  // ========================================
+  // STATE
+  // ========================================
   let lastRenderedTs = 0;
   let conversationHistory = [];
   let isFirstAssistantLoad = true;
 
-  // legacy storage wrapper removed in favor of storageGet/storageSet
-
   const els = {};
+
+  // ========================================
+  // INITIALIZATION
+  // ========================================
   document.addEventListener('DOMContentLoaded', async () => {
     cacheEls();
     bindEvents();
-    setupStorageListener(); // <- ADD THIS LINE
+    setupStorageListener();
+    // Show loading, hide main content initially
+    try {
+      els.loadingState?.classList.remove('hidden');
+      els.mainContent?.classList.add('hidden');
+    } catch {}
     await refreshResults();
   });
 
@@ -133,6 +157,7 @@
     els.domain = document.getElementById('article-domain');
     els.time = document.getElementById('analysis-time');
     els.source = document.getElementById('analysis-source');
+    els.mainContent = document.getElementById('main-content');
     els.keyFindings = document.getElementById('findings-content');
     els.loadedLanguage = document.getElementById('biased-languages-content');
     els.balancedElements = document.getElementById('neutral-languages-content');
@@ -140,10 +165,8 @@
     els.loadingState = document.getElementById('loading-state');
     els.tribunalVerdictsCard = document.getElementById('tribunal-verdicts-card');
     els.tribunalVerdictsContent = document.getElementById('tribunal-verdicts-content');
-    
-    els.refresh = document.getElementById('refresh-results');
-    els.openSidepanel = document.getElementById('open-sidepanel');
-    els.onDeviceWarning = document.getElementById('on-device-warning');
+    els.structuralAnalysisCard = document.getElementById('structural-analysis-card');
+    els.structuralAnalysisContent = document.getElementById('structural-analysis-content');
     els.assistantTrigger = document.getElementById('assistant-trigger');
     els.assistantOverlay = document.getElementById('assistant-overlay');
     els.assistantModal = document.getElementById('assistant-modal');
@@ -155,65 +178,60 @@
     els.firstUseNotice = document.getElementById('assistant-first-use-notice');
   }
 
-// ADD THIS NEW FUNCTION:
-function setupStorageListener() {
-  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'local' && changes.lastAnalysis) {
-        console.log('[BiasNeutralizer Results] New analysis detected, refreshing...');
-        refreshResults();
-      }
-    });
+  function setupStorageListener() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local' && changes.lastAnalysis) {
+          console.log('[BiasNeutralizer Results] New analysis detected, refreshing...');
+          refreshResults();
+        }
+      });
+    }
   }
-}
 
   function bindEvents() {
-    els.refresh?.addEventListener('click', refreshResults);
-    els.openSidepanel?.addEventListener('click', openSidePanel);
     els.backToSidepanel?.addEventListener('click', () => {
-        // Navigate back to the sidepanel page
-        window.location.assign(chrome.runtime.getURL('sidepanel/sidepanel.html'));
+      window.location.assign(chrome.runtime.getURL('sidepanel/sidepanel.html'));
     });
     
     els.assistantTrigger?.addEventListener('click', openAssistant);
     els.assistantCloseBtn?.addEventListener('click', closeAssistant);
     els.assistantOverlay?.addEventListener('click', (e) => {
-        if (e.target === els.assistantOverlay) {
-            closeAssistant();
-        }
+      if (e.target === els.assistantOverlay) {
+        closeAssistant();
+      }
     });
     els.assistantForm?.addEventListener('submit', handleAssistantSubmit);
     els.promptStarterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const prompt = btn.dataset.prompt;
-            if (prompt) {
-                openAssistant();
-                els.assistantInput.value = prompt;
-                handleAssistantSubmit(new Event('submit'));
-            }
-        });
+      btn.addEventListener('click', () => {
+        const prompt = btn.dataset.prompt;
+        if (prompt) {
+          openAssistant();
+          els.assistantInput.value = prompt;
+          handleAssistantSubmit(new Event('submit'));
+        }
+      });
     });
   }
 
+  // ========================================
+  // REFRESH RESULTS
+  // ========================================
   async function refreshResults() {
-    // Show loading state
-    if (els.loadingState) {
-      els.loadingState.classList.remove('hidden');
-    }
+    if (els.loadingState) els.loadingState.classList.remove('hidden');
+    if (els.mainContent) els.mainContent.classList.add('hidden');
     
     try {
       const { lastAnalysis } = await storageGet(['lastAnalysis']);
       console.log('[BiasNeutralizer Results] ===== LOADING ANALYSIS =====');
       console.log('[BiasNeutralizer Results] lastAnalysis:', lastAnalysis);
-      console.log('[BiasNeutralizer Results] lastAnalysis type:', typeof lastAnalysis);
       
-      // Hide loading state after data is loaded
-      if (els.loadingState) {
-        els.loadingState.classList.add('hidden');
-      }
+      // keep loading visible until render completes
       
       if (!lastAnalysis || typeof lastAnalysis !== 'object') {
         console.warn('[BiasNeutralizer Results] No valid analysis found');
+        if (els.loadingState) els.loadingState.classList.add('hidden');
+        if (els.mainContent) els.mainContent.classList.remove('hidden');
         renderEmpty();
         return;
       }
@@ -225,10 +243,8 @@ function setupStorageListener() {
       renderWhenVisible(() => render(lastAnalysis));
     } catch (e) {
       console.error('[BiasNeutralizer Results] Failed to load results:', e);
-      // Hide loading state on error
-      if (els.loadingState) {
-        els.loadingState.classList.add('hidden');
-      }
+      if (els.loadingState) els.loadingState.classList.add('hidden');
+      if (els.mainContent) els.mainContent.classList.remove('hidden');
       renderEmpty();
     }
   }
@@ -242,11 +258,11 @@ function setupStorageListener() {
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
     els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
-    if (els.onDeviceWarning) {
-      els.onDeviceWarning.classList.remove('visible');
-    }
   }
 
+  // ========================================
+  // RENDER
+  // ========================================
   function render(data) {
     console.log('[BiasNeutralizer Results] ===== RENDERING ANALYSIS =====');
     console.log('[BiasNeutralizer Results] Raw data:', data);
@@ -254,9 +270,7 @@ function setupStorageListener() {
     const { url, title, summary, source, timestamp, raw } = sanitizeAnalysisData(data);
     
     console.log('[BiasNeutralizer Results] Sanitized data:');
-    console.log('[BiasNeutralizer Results] - summary type:', typeof summary);
-    console.log('[BiasNeutralizer Results] - summary length:', typeof summary === 'string' ? summary.length : 'N/A');
-    console.log('[BiasNeutralizer Results] - summary value:', summary);
+    console.log('[BiasNeutralizer Results] - summary:', summary);
     console.log('[BiasNeutralizer Results] - raw:', raw);
     
     const domain = safeDomain(url);
@@ -264,40 +278,34 @@ function setupStorageListener() {
     els.title.href = url || '#';
     els.domain.textContent = domain || '—';
     els.time.textContent = timestamp ? formatTime(timestamp) : '—';
-    if (source) { els.source.textContent = source; els.source.hidden = false; } else { els.source.hidden = true; }
+    if (source) { 
+      els.source.textContent = source; 
+      els.source.hidden = false; 
+    } else { 
+      els.source.hidden = true; 
+    }
     
-    // Parse and render the summary with proper formatting
     let summaryText;
     if (typeof summary === 'string' && summary.trim().length) {
       summaryText = summary;
-      console.log('[BiasNeutralizer Results] Using summary field');
     } else {
       summaryText = defaultSummaryFromRaw(raw);
-      console.log('[BiasNeutralizer Results] Using fallback from raw');
     }
     
-    // Normalize and bound summary markdown
     let md = normalizeModeratorSections(summaryText);
     if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
 
-    console.log('[BiasNeutralizer Results] Final summaryText (normalized):', md);
-    console.log('[BiasNeutralizer Results] Final summaryText length:', md?.length);
-
-    // Parse and render the analysis into separate cards
     parseAndRenderAnalysis(md, raw);
 
-    // Show the Bias Hero section and update bias rating display with animations
     const biasHeroEl = document.querySelector('.bias-hero');
     if (biasHeroEl) {
       biasHeroEl.classList.remove('initially-hidden');
     }
+    
     const extracted = extractBiasRating(md);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
-    const confidenceValueEl = document.getElementById('confidence-value');
-    const analysisTypeValueEl = document.getElementById('analysis-type-value');
     
-    // Animate bias rating with fade in
     if (ratingEl) {
       ratingEl.style.opacity = '0';
       ratingEl.textContent = extracted.rating;
@@ -308,43 +316,21 @@ function setupStorageListener() {
     }
     
     if (confidenceEl) confidenceEl.textContent = `Confidence: ${extracted.confidence}`;
-    if (confidenceValueEl) confidenceValueEl.textContent = extracted.confidence || 'Medium';
-    if (analysisTypeValueEl) analysisTypeValueEl.textContent = source ? source.toUpperCase() : 'STANDARD';
     
-    // Animate the rating progress ring
     animateRatingRing(extracted.rating, extracted.confidence);
 
-    // Load the on-device summary from storage
     loadAndRenderSummary(document.getElementById('summary-content'));
 
-    // Render tribunal verdicts if available
-    renderTribunalVerdicts(raw);
+    // Render new Tribunal and Structural sections
+    const tribunal = raw && raw.tribunalDebate ? raw.tribunalDebate : null;
+    renderTribunalVerdictsV2(tribunal);
+    renderStructuralAnalysis(tribunal && tribunal.verifiedFacts ? tribunal.verifiedFacts : null);
 
-    // Show neutral on-device prompt only when it makes sense
-    if (els.onDeviceWarning) {
-      const suggest = shouldSuggestDeep(raw, source, md);
-      els.onDeviceWarning.classList.toggle('visible', suggest);
-    }
-
-  }
-
-  function shouldSuggestDeep(raw, source, summaryText) {
-    // Only suggest when current analysis was on-device/private
-    const isPrivate = source === 'private' || source === 'on-device' || !source;
-    if (!isPrivate) return false;
-
+    // Reveal main content after successful render
     try {
-      const len = Number(raw?.contentLength || 0);
-      const paras = Number(raw?.paragraphCount || 0);
-      // Heuristics for "long/complex"
-      const isLong = len >= 4000 || paras >= 18;
-      // If the summary mentions comparison or multiple sources, treat as complex
-      const s = (summaryText || '').toLowerCase();
-      const mentionsCompare = /compare|comparison|multiple sources|cross-check|multi-source/.test(s);
-      return isLong || mentionsCompare;
-    } catch (_) {
-      return false;
-    }
+      els.loadingState?.classList.add('hidden');
+      els.mainContent?.classList.remove('hidden');
+    } catch {}
   }
 
   function safeDomain(u) {
@@ -356,18 +342,17 @@ function setupStorageListener() {
   }
 
   function defaultSummaryFromRaw(raw) {
-  if (!raw) return 'Analysis complete.';
-  if (typeof raw === 'string') return raw;
-  
-  // Fix: Check for raw.analysis.text (object with text field)
-  if (raw && raw.analysis) {
-    if (typeof raw.analysis === 'string') return raw.analysis;
-    if (typeof raw.analysis.text === 'string') return raw.analysis.text; // <- ADD THIS LINE
+    if (!raw) return 'Analysis complete.';
+    if (typeof raw === 'string') return raw;
+    
+    if (raw && raw.analysis) {
+      if (typeof raw.analysis === 'string') return raw.analysis;
+      if (typeof raw.analysis.text === 'string') return raw.analysis.text;
+    }
+    
+    if (raw && raw.source) return `Analysis from the ${raw.source} model is complete.`;
+    return 'Analysis complete.';
   }
-  
-  if (raw && raw.source) return `Analysis from the ${raw.source} model is complete.`;
-  return 'Analysis complete.';
-}
 
   function sanitizeAnalysisData(data) {
     const out = {};
@@ -376,11 +361,9 @@ function setupStorageListener() {
       out.url = (typeof d.url === 'string' && d.url.length < 2048) ? d.url : '';
       out.title = (typeof d.title === 'string' && d.title.trim().length) ? d.title.trim().slice(0, 500) : '';
       
-      // Handle summary field - check if it's a string or an object
       if (typeof d.summary === 'string') {
         out.summary = d.summary;
       } else if (typeof d.summary === 'object' && d.summary !== null) {
-        // If summary is an object, try to extract meaningful data
         if (d.summary.analysis && typeof d.summary.analysis === 'string') {
           out.summary = d.summary.analysis;
         } else {
@@ -407,30 +390,7 @@ function setupStorageListener() {
     return out;
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;');
-  }
-
-  async function openSidePanel() {
-    try {
-      // Try opening the side panel on the active tab
-      const [tab] = await new Promise((resolve) => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
-      if (tab && tab.id != null && chrome.sidePanel && chrome.sidePanel.open) {
-        await chrome.sidePanel.open({ tabId: tab.id });
-        return;
-      }
-    } catch (e) {
-      // fall through to open the sidepanel html page
-    }
-    const url = hasRuntime ? chrome.runtime.getURL('sidepanel/sidepanel.html') : '../sidepanel/sidepanel.html';
-    window.location.assign(url);
-  }
-
   function extractBiasRating(text) {
-    // Type guard: handle null/undefined/non-string
     if (!text || typeof text !== 'string') {
       return {
         rating: 'Unknown',
@@ -438,7 +398,6 @@ function setupStorageListener() {
       };
     }
     
-    // Parse both old style ("Rating:") and bracketed labels ("[RATING]:")
     const ratingMatch = text.match(/\[?Rating\]?:?\s*(Strong\s+Left|Left|Lean\s+Left|Center|Lean\s+Right|Right|Strong\s+Right|Unclear)/i)
       || text.match(/\[RATING\]\s*:\s*([^\n]+)/i);
     const confidenceMatch = text.match(/\[?Confidence\]?:?\s*(High|Medium|Low)/i)
@@ -450,53 +409,50 @@ function setupStorageListener() {
     };
   }
 
-  // Parse analysis text into sections and populate cards
+  // ========================================
+  // PARSE AND RENDER ANALYSIS
+  // ========================================
   function parseAndRenderAnalysis(text, raw) {
-  const sections = parseAnalysisSections(text);
-  
-  // Store globally for other renderers
-  window.__analysisSections = sections;
-  window.__rawAnalysis = raw;
-  
-  console.log('[Results] parseAndRenderAnalysis - sections:', sections);
-  console.log('[Results] parseAndRenderAnalysis - raw:', raw);
-  
-  // Populate Key Findings card - try structured data first
-  const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
-  
-  if (sections.keyFindings && sections.keyFindings.length > 0) {
-    renderBulletList(els.keyFindings, sections.keyFindings);
-  } else if (analysisData && analysisData.biasIndicators && analysisData.biasIndicators.length > 0) {
-    // Fallback to bias indicators from structured data
-    const findings = analysisData.biasIndicators.map(ind => 
-      `${ind.type}: ${ind.explanation || ind.example}`
-    );
-    renderBulletList(els.keyFindings, findings);
-  } else {
-    els.keyFindings.innerHTML = '<p class="placeholder-text">No significant bias indicators found</p>';
+    const sections = parseAnalysisSections(text);
+    
+    window.__analysisSections = sections;
+    window.__rawAnalysis = raw;
+    
+    console.log('[Results] parseAndRenderAnalysis - sections:', sections);
+    console.log('[Results] parseAndRenderAnalysis - raw:', raw);
+    
+    const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
+    
+    // Populate Key Findings
+    if (sections.keyFindings && sections.keyFindings.length > 0) {
+      renderBulletList(els.keyFindings, sections.keyFindings);
+    } else if (analysisData && analysisData.biasIndicators && analysisData.biasIndicators.length > 0) {
+      const findings = analysisData.biasIndicators.map(ind => 
+        `${ind.type}: ${ind.explanation || ind.example}`
+      );
+      renderBulletList(els.keyFindings, findings);
+    } else {
+      els.keyFindings.innerHTML = '<p class="placeholder-text">No significant bias indicators found</p>';
+    }
+    
+    // Populate Loaded Language
+    renderLoadedFromRaw();
+    
+    // Populate Balanced Elements
+    if (sections.balancedElements && sections.balancedElements.length > 0) {
+      renderBulletList(els.balancedElements, sections.balancedElements);
+    } else if (analysisData && analysisData.balancedElements && analysisData.balancedElements.length > 0) {
+      const elements = analysisData.balancedElements.map(el => 
+        `${el.type}: ${el.explanation}`
+      );
+      renderBulletList(els.balancedElements, elements);
+    } else {
+      els.balancedElements.innerHTML = '<p class="placeholder-text">No notable balanced elements identified</p>';
+    }
+    
+    renderMethodology();
   }
-  
-  // Populate Loaded Language card - prefer structured data from raw
-  renderLoadedFromRaw();
-  
-  // Populate Balanced Elements card - try structured data first
-  if (sections.balancedElements && sections.balancedElements.length > 0) {
-    renderBulletList(els.balancedElements, sections.balancedElements);
-  } else if (analysisData && analysisData.balancedElements && analysisData.balancedElements.length > 0) {
-    // Fallback to structured data
-    const elements = analysisData.balancedElements.map(el => 
-      `${el.type}: ${el.explanation}`
-    );
-    renderBulletList(els.balancedElements, elements);
-  } else {
-    els.balancedElements.innerHTML = '<p class="placeholder-text">No notable balanced elements identified</p>';
-  }
-  
-  // Populate Methodology Note
-  renderMethodology();
-}
-  
-  // Render Methodology dynamically
+
   function renderMethodology() {
     const methodEl = document.getElementById('methodology-content');
     if (!methodEl) return;
@@ -514,63 +470,57 @@ function setupStorageListener() {
       methodEl.innerHTML = '<p class="methodology-text">Method: narrative bias vs. quoted-source bias evaluated separately; only falsifiable indicators are flagged; genuine balance credited.</p>';
     }
   }
-  
-  // Render Loaded Language from structured data when available
-  function renderLoadedFromRaw() {
-  const raw = window.__rawAnalysis;
-  const sections = window.__analysisSections || {};
-  
-  console.log('[Results] renderLoadedFromRaw - raw:', raw);
-  console.log('[Results] renderLoadedFromRaw - sections:', sections);
-  
-  // Check multiple possible locations for language analysis data
-  const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
-  
-  // Try structured data first
-  if (analysisData && Array.isArray(analysisData.languageAnalysis) && analysisData.languageAnalysis.length > 0) {
-    const items = analysisData.languageAnalysis;
-    els.loadedLanguage.innerHTML = '';
-    
-    items.slice(0, 8).forEach(x => {
-      const exampleDiv = document.createElement('div');
-      exampleDiv.className = 'language-example';
-      
-      const phrase = typeof x === 'string' ? x : (x.phrase || JSON.stringify(x));
-      const phraseDiv = document.createElement('div');
-      phraseDiv.className = 'language-phrase';
-      phraseDiv.textContent = `"${phrase}"`;
-      exampleDiv.appendChild(phraseDiv);
-      
-      if (x.explanation) {
-        const explanationDiv = document.createElement('div');
-        explanationDiv.className = 'language-explanation';
-        explanationDiv.textContent = x.explanation;
-        exampleDiv.appendChild(explanationDiv);
-      }
-      
-      if (x.neutral_alternative) {
-        const altDiv = document.createElement('div');
-        altDiv.className = 'language-alternative';
-        altDiv.textContent = `Alternative: "${x.neutral_alternative}"`;
-        exampleDiv.appendChild(altDiv);
-      }
-      
-      els.loadedLanguage.appendChild(exampleDiv);
-    });
-    return;
-  }
-  
-  // Try parsing from text sections
-  if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
-    renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
-    return;
-  }
-  
-  // Final fallback
-  els.loadedLanguage.innerHTML = '<p class="placeholder-text">No significant biased language detected in the narrative</p>';
-}
 
-  // Parse the analysis text into structured sections
+  function renderLoadedFromRaw() {
+    const raw = window.__rawAnalysis;
+    const sections = window.__analysisSections || {};
+    
+    console.log('[Results] renderLoadedFromRaw - raw:', raw);
+    console.log('[Results] renderLoadedFromRaw - sections:', sections);
+    
+    const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
+    
+    if (analysisData && Array.isArray(analysisData.languageAnalysis) && analysisData.languageAnalysis.length > 0) {
+      const items = analysisData.languageAnalysis;
+      els.loadedLanguage.innerHTML = '';
+      
+      items.slice(0, 8).forEach(x => {
+        const exampleDiv = document.createElement('div');
+        exampleDiv.className = 'language-example';
+        
+        const phrase = typeof x === 'string' ? x : (x.phrase || JSON.stringify(x));
+        const phraseDiv = document.createElement('div');
+        phraseDiv.className = 'language-phrase';
+        phraseDiv.textContent = `"${phrase}"`;
+        exampleDiv.appendChild(phraseDiv);
+        
+        if (x.explanation) {
+          const explanationDiv = document.createElement('div');
+          explanationDiv.className = 'language-explanation';
+          explanationDiv.textContent = x.explanation;
+          exampleDiv.appendChild(explanationDiv);
+        }
+        
+        if (x.neutral_alternative) {
+          const altDiv = document.createElement('div');
+          altDiv.className = 'language-alternative';
+          altDiv.textContent = `Alternative: "${x.neutral_alternative}"`;
+          exampleDiv.appendChild(altDiv);
+        }
+        
+        els.loadedLanguage.appendChild(exampleDiv);
+      });
+      return;
+    }
+    
+    if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
+      renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
+      return;
+    }
+    
+    els.loadedLanguage.innerHTML = '<p class="placeholder-text">No significant biased language detected in the narrative</p>';
+  }
+
   function parseAnalysisSections(text) {
     if (!text || typeof text !== 'string') {
       return { keyFindings: [], loadedLanguage: [], balancedElements: [], methodology: [] };
@@ -583,7 +533,6 @@ function setupStorageListener() {
       methodology: []
     };
 
-    // Split text into lines and find section headers
     const lines = text.split('\n');
     let currentSection = null;
     let currentItems = [];
@@ -592,7 +541,9 @@ function setupStorageListener() {
       'KEY FINDINGS': 'keyFindings',
       'LOADED LANGUAGE': 'loadedLanguage',
       'LOADED LANGUAGE EXAMPLES': 'loadedLanguage',
+      'BIASED LANGUAGES USED': 'loadedLanguage',
       'BALANCED ELEMENTS': 'balancedElements',
+      'NEUTRAL LANGUAGES USED': 'balancedElements',
       'METHODOLOGY NOTE': 'methodology',
       'OVERALL BIAS ASSESSMENT': null,
       'IMPORTANT RULES': null
@@ -601,7 +552,6 @@ function setupStorageListener() {
     for (const line of lines) {
       const trimmed = line.trim();
       
-      // Check if this line is a section header
       const headerMatch = Object.keys(sectionHeaders).find(h => 
         trimmed.toUpperCase().startsWith(h) || 
         trimmed.toUpperCase() === h ||
@@ -609,24 +559,19 @@ function setupStorageListener() {
       );
       
       if (headerMatch) {
-        // Save previous section
         if (currentSection && currentItems.length > 0) {
           sections[currentSection] = currentItems;
         }
-        // Start new section
         currentSection = sectionHeaders[headerMatch];
         currentItems = [];
         continue;
       }
       
-      // If we're in a tracked section, collect bullet items or paragraphs
       if (currentSection) {
-        // Match bullet points
         const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
         if (bulletMatch) {
           currentItems.push(bulletMatch[1].trim());
         } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
-          // Include non-empty, non-separator lines as items if they're substantial
           if (trimmed.length > 20 && !trimmed.match(/^(Rating|Confidence):/i)) {
             currentItems.push(trimmed);
           }
@@ -634,7 +579,6 @@ function setupStorageListener() {
       }
     }
     
-    // Save final section
     if (currentSection && currentItems.length > 0) {
       sections[currentSection] = currentItems;
     }
@@ -642,7 +586,6 @@ function setupStorageListener() {
     return sections;
   }
 
-  // Render a bullet list in a container
   function renderBulletList(container, items) {
     while (container.firstChild) container.removeChild(container.firstChild);
     
@@ -656,20 +599,16 @@ function setupStorageListener() {
     container.appendChild(ul);
   }
 
-  // Render loaded language examples with special formatting
   function renderLoadedLanguageExamples(container, items, raw) {
     while (container.firstChild) container.removeChild(container.firstChild);
     
-    // Try to extract more detailed language analysis from raw data if available
     let examples = [];
     
     if (raw && raw.languageAnalysis && Array.isArray(raw.languageAnalysis)) {
       examples = raw.languageAnalysis.slice(0, 5);
     } else {
-      // Use the parsed items as simple examples
       examples = items.slice(0, 5).map(item => {
-        // Try to parse "phrase" → explanation format
-        const arrowMatch = item.match(/["'](.+?)["']\s*[→-]\s*(.+)/);
+        const arrowMatch = item.match(/["'](.+?)["']\s*[→'-]\s*(.+)/);
         if (arrowMatch) {
           return {
             phrase: arrowMatch[1],
@@ -712,24 +651,23 @@ function setupStorageListener() {
     });
   }
 
-  // Render Tribunal Verdicts card
+  // ========================================
+  // TRIBUNAL VERDICTS
+  // ========================================
   function renderTribunalVerdicts(raw) {
     if (!els.tribunalVerdictsCard || !els.tribunalVerdictsContent) return;
     
-    // Check if tribunal data exists
     if (!raw || !raw.tribunalDebate || !raw.tribunalDebate.charges || raw.tribunalDebate.charges.length === 0) {
       els.tribunalVerdictsCard.style.display = 'none';
       return;
     }
     
-    // Show the card
     els.tribunalVerdictsCard.style.display = 'block';
     
     const { charges, rebuttals, verifiedFacts } = raw.tribunalDebate;
     
     els.tribunalVerdictsContent.innerHTML = '';
     
-    // If no charges were filed
     if (charges.length === 0) {
       const noChargesP = document.createElement('p');
       noChargesP.className = 'tribunal-section-content';
@@ -738,12 +676,10 @@ function setupStorageListener() {
       return;
     }
     
-    // Render each charge with its debate
     charges.forEach((charge, index) => {
       const chargeDiv = document.createElement('div');
       chargeDiv.className = 'tribunal-charge';
       
-      // Charge Header
       const chargeHeader = document.createElement('div');
       chargeHeader.className = 'charge-header';
       
@@ -761,7 +697,6 @@ function setupStorageListener() {
       
       chargeDiv.appendChild(chargeHeader);
       
-      // Charge Claim
       if (charge.claim) {
         const chargeClaim = document.createElement('p');
         chargeClaim.className = 'charge-claim';
@@ -769,7 +704,6 @@ function setupStorageListener() {
         chargeDiv.appendChild(chargeClaim);
       }
       
-      // Prosecutor's Evidence
       if (charge.supporting_evidence && charge.supporting_evidence.length > 0) {
         const prosecutorSection = document.createElement('div');
         prosecutorSection.className = 'tribunal-section';
@@ -791,7 +725,6 @@ function setupStorageListener() {
         chargeDiv.appendChild(prosecutorSection);
       }
       
-      // Defense's Rebuttal
       const rebuttal = rebuttals && rebuttals.find(r => r.charge_id === charge.charge_id);
       if (rebuttal) {
         const defenseSection = document.createElement('div');
@@ -821,7 +754,6 @@ function setupStorageListener() {
         chargeDiv.appendChild(defenseSection);
       }
       
-      // Investigator's Facts
       const facts = verifiedFacts && verifiedFacts.find(f => f.charge_id === charge.charge_id);
       if (facts && facts.findings) {
         const investigatorSection = document.createElement('div');
@@ -835,7 +767,6 @@ function setupStorageListener() {
         const factsContent = document.createElement('p');
         factsContent.className = 'tribunal-section-content';
         
-        // Create a readable summary of the findings
         let factsSummary = '';
         if (facts.investigation_type) {
           factsSummary += `<strong>${facts.investigation_type}:</strong> `;
@@ -849,7 +780,6 @@ function setupStorageListener() {
         factsContent.innerHTML = factsSummary;
         investigatorSection.appendChild(factsContent);
         
-        // Add verdict badge if available
         if (rebuttal && rebuttal.recommended_verdict) {
           const verdictBadge = document.createElement('div');
           const verdictClass = rebuttal.recommended_verdict.toLowerCase().includes('dismiss') ? 'dismissed' :
@@ -867,7 +797,113 @@ function setupStorageListener() {
     });
   }
 
-  // legacy text renderer removed
+  // ========================================
+  // TRIBUNAL RENDER (V2)
+  // ========================================
+  function renderTribunalVerdictsV2(tribunalDebate) {
+    if (!els.tribunalVerdictsCard || !els.tribunalVerdictsContent) return;
+    const td = tribunalDebate;
+    if (!td || !Array.isArray(td.charges) || td.charges.length === 0) {
+      els.tribunalVerdictsCard.style.display = 'none';
+      return;
+    }
+    els.tribunalVerdictsCard.style.display = 'block';
+    els.tribunalVerdictsContent.innerHTML = '';
+
+    const charges = td.charges || [];
+    const rebuttals = Array.isArray(td.rebuttals) ? td.rebuttals : [];
+    const verdicts = Array.isArray(td.verdicts) ? td.verdicts : [];
+
+    charges.forEach((charge, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'tribunal-charge';
+
+      const head = document.createElement('div');
+      head.className = 'charge-header';
+      const h3 = document.createElement('h3');
+      h3.className = 'charge-title';
+      h3.textContent = `Charge ${i + 1}`;
+      head.appendChild(h3);
+      if (charge && charge.severity) {
+        const sev = document.createElement('span');
+        sev.className = `charge-severity ${String(charge.severity).toLowerCase()}`;
+        sev.textContent = charge.severity;
+        head.appendChild(sev);
+      }
+      wrap.appendChild(head);
+
+      if (charge && charge.claim) {
+        const claim = document.createElement('p');
+        claim.className = 'charge-claim';
+        claim.textContent = charge.claim;
+        wrap.appendChild(claim);
+      }
+
+      const rebuttal = rebuttals[i] || null;
+      if (rebuttal && rebuttal.counter_argument) {
+        const def = document.createElement('div');
+        def.className = 'tribunal-section';
+        const t = document.createElement('div');
+        t.className = 'tribunal-section-title';
+        t.textContent = "Defense's Rebuttal";
+        def.appendChild(t);
+        const body = document.createElement('p');
+        body.className = 'tribunal-section-content';
+        body.textContent = rebuttal.counter_argument;
+        def.appendChild(body);
+        wrap.appendChild(def);
+      }
+
+      let verdict = verdicts[i] || null;
+      if (!verdict && verdicts.length) {
+        verdict = verdicts.find(v => v.charge && charge && v.charge === charge.claim) || null;
+      }
+      if (verdict && (verdict.ruling || verdict.reasoning)) {
+        const judge = document.createElement('div');
+        judge.className = 'tribunal-section';
+        const jt = document.createElement('div');
+        jt.className = 'tribunal-section-title';
+        jt.textContent = "Judge's Verdict";
+        judge.appendChild(jt);
+        const jb = document.createElement('div');
+        jb.className = 'tribunal-section-content';
+        const ruling = verdict.ruling ? `<strong>${verdict.ruling}</strong>` : '';
+        const reasoning = verdict.reasoning ? ` — ${verdict.reasoning}` : '';
+        jb.innerHTML = `${ruling}${reasoning}`;
+        judge.appendChild(jb);
+        wrap.appendChild(judge);
+      }
+
+      els.tribunalVerdictsContent.appendChild(wrap);
+    });
+  }
+
+  // ========================================
+  // STRUCTURAL ANALYSIS
+  // ========================================
+  function renderStructuralAnalysis(verifiedFacts) {
+    if (!els.structuralAnalysisCard || !els.structuralAnalysisContent) return;
+    const vf = verifiedFacts && typeof verifiedFacts === 'object' ? verifiedFacts : null;
+    if (!vf || Object.keys(vf).length === 0) {
+      els.structuralAnalysisCard.style.display = 'none';
+      return;
+    }
+    els.structuralAnalysisCard.style.display = 'block';
+    const container = els.structuralAnalysisContent;
+    container.innerHTML = '';
+    const ul = document.createElement('ul');
+    Object.entries(vf).forEach(([k, v]) => {
+      const li = document.createElement('li');
+      const key = String(k).replace(/_/g, ' ').replace(/\b\w/g, s => s.toUpperCase());
+      li.textContent = `${key}: ${typeof v === 'string' ? v : JSON.stringify(v)}`;
+      ul.appendChild(li);
+    });
+    container.appendChild(ul);
+  }
+
+  // ========================================
+  // ASSISTANT MODAL
+  // ========================================
   function openAssistant() {
     if (!els.assistantOverlay || !els.firstUseNotice) return;
 
@@ -878,34 +914,33 @@ function setupStorageListener() {
 
     els.assistantOverlay.style.display = 'flex';
     setTimeout(() => {
-        els.assistantOverlay.classList.add('visible');
-        els.assistantInput.focus();
+      els.assistantOverlay.classList.add('visible');
+      els.assistantInput.focus();
     }, 10);
   }
 
-function closeAssistant() {
+  function closeAssistant() {
     if (!els.assistantOverlay) return;
     els.assistantOverlay.classList.remove('visible');
     setTimeout(() => {
-        els.assistantOverlay.style.display = 'none';
+      els.assistantOverlay.style.display = 'none';
     }, 300);
-}
+  }
 
-function addMessageToChat(role, content) {
+  function addMessageToChat(role, content) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `assistant-message ${role}`;
-    // Sanitize content to prevent XSS attacks
     const sanitizedContent = DOMPurify.sanitize(content, {
-        ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
-        ALLOWED_ATTR: []
+      ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
+      ALLOWED_ATTR: []
     });
     messageDiv.innerHTML = sanitizedContent;
     els.assistantChatWindow.appendChild(messageDiv);
     els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
     return messageDiv;
-}
+  }
 
-async function handleAssistantSubmit(event) {
+  async function handleAssistantSubmit(event) {
     event.preventDefault();
     const userInput = els.assistantInput.value.trim();
     if (!userInput) return;
@@ -918,101 +953,100 @@ async function handleAssistantSubmit(event) {
     const typingIndicator = addMessageToChat('assistant typing-indicator', '<span></span><span></span><span></span>');
 
     try {
-        await streamAssistantResponse(userInput, typingIndicator);
+      await streamAssistantResponse(userInput, typingIndicator);
     } catch (error) {
-        console.error("Assistant Error:", error);
-        typingIndicator.textContent = "Sorry, I encountered an error. Please try again.";
+      console.error("Assistant Error:", error);
+      typingIndicator.textContent = "Sorry, I encountered an error. Please try again.";
     } finally {
-        els.assistantInput.disabled = false;
-        els.assistantInput.focus();
+      els.assistantInput.disabled = false;
+      els.assistantInput.focus();
     }
-}
+  }
 
-async function handleOnDeviceAssistant(userInput, messageElement) {
+  async function handleOnDeviceAssistant(userInput, messageElement) {
     try {
-        const availability = await window.LanguageModel.availability();
-        if (availability !== 'available') {
-            throw new Error(`On-device model not available. Status: ${availability}`);
-        }
+      const availability = await window.ai.languageModel.availability();
+      if (availability !== 'available') {
+        throw new Error(`On-device model not available. Status: ${availability}`);
+      }
 
-        const session = await window.LanguageModel.create();
-        const { lastAnalysis } = await storageGet(['lastAnalysis']);
-        const analysisContext = JSON.stringify(lastAnalysis, null, 2);
+      const session = await window.ai.languageModel.create();
+      const { lastAnalysis } = await storageGet(['lastAnalysis']);
+      const analysisContext = JSON.stringify(lastAnalysis, null, 2);
 
-        const systemPrompt = `You are a helpful assistant for the BiasNeutralizer app. Your answers MUST be based *only* on the JSON analysis data provided below. Do not invent information. If the user asks something not in the context, say so.
+      const systemPrompt = `You are a helpful assistant for the BiasNeutralizer app. Your answers MUST be based *only* on the JSON analysis data provided below. Do not invent information. If the user asks something not in the context, say so.
 
-        ANALYSIS CONTEXT:
-        ${analysisContext}`;
+ANALYSIS CONTEXT:
+${analysisContext}`;
 
-        const fullPrompt = `${systemPrompt}\n\n--- Conversation History ---\n${conversationHistory
-            .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts[0].text}`)
-            .join('\n')}\nUser: ${userInput}\nAssistant:`;
+      const fullPrompt = `${systemPrompt}\n\n--- Conversation History ---\n${conversationHistory
+        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts[0].text}`)
+        .join('\n')}\nUser: ${userInput}\nAssistant:`;
 
-        const responseText = await session.prompt(fullPrompt);
-        await session.destroy();
+      const responseText = await session.prompt(fullPrompt);
+      await session.destroy();
 
-        messageElement.classList.remove('typing-indicator');
-        const formattedHtml = responseText
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>');
-        messageElement.innerHTML = DOMPurify.sanitize(formattedHtml, { ALLOWED_TAGS: ['strong', 'em', 'p', 'br'] });
+      messageElement.classList.remove('typing-indicator');
+      const formattedHtml = responseText
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+      messageElement.innerHTML = DOMPurify.sanitize(formattedHtml, { ALLOWED_TAGS: ['strong', 'em', 'p', 'br'] });
 
-        conversationHistory.push({ role: 'model', parts: [{ text: responseText }] });
+      conversationHistory.push({ role: 'model', parts: [{ text: responseText }] });
 
     } catch (error) {
-        console.error("On-device assistant error:", error);
-        messageElement.classList.remove('typing-indicator');
-        messageElement.textContent = `Sorry, the on-device assistant failed: ${error.message}`;
+      console.error("On-device assistant error:", error);
+      messageElement.classList.remove('typing-indicator');
+      messageElement.textContent = `Sorry, the on-device assistant failed: ${error.message}`;
     }
-}
+  }
 
-async function streamAssistantResponse(userInput, messageElement) {
+  async function streamAssistantResponse(userInput, messageElement) {
     const settings = await storageGet(['lastAnalysis', 'geminiApiKey', 'assistantModel']);
     const { lastAnalysis, geminiApiKey } = settings;
     const assistantModel = settings.assistantModel || 'on-device';
 
     if (assistantModel === 'cloud' && !geminiApiKey) {
-        messageElement.textContent = "Error: Gemini API key not found in settings.";
-        return;
+      messageElement.textContent = "Error: Gemini API key not found in settings.";
+      return;
     }
 
     const analysisContext = JSON.stringify(lastAnalysis, null, 2);
 
     if (assistantModel === 'on-device') {
-        // Call the new on-device handler function we just created
-        await handleOnDeviceAssistant(userInput, messageElement);
-        return; // Exit the function here
+      await handleOnDeviceAssistant(userInput, messageElement);
+      return;
     }
 
     const systemPrompt = `You are the BiasNeutralizer Analysis Assistant. Your purpose is to explain the provided news analysis clearly, neutrally, and concisely.
-    - You MUST base your answers strictly on the JSON context provided below. Do not invent information.
-    - If the user asks a question that cannot be answered by the context, politely state that.
-    - Format your response using simple markdown (bold, italics, lists).
+- You MUST base your answers strictly on the JSON context provided below. Do not invent information.
+- If the user asks a question that cannot be answered by the context, politely state that.
+- Format your response using simple markdown (bold, italics, lists).
 
-    ANALYSIS CONTEXT:
-    ${analysisContext}`;
+ANALYSIS CONTEXT:
+${analysisContext}`;
 
-    const model = 'gemini-1.5-flash';
+    // Use very fast model for results assistant cloud mode
+    const model = 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}&alt=sse`;
 
-    // Add system prompt and current history to the request
     const requestBody = {
-        contents: [
-            ...conversationHistory
-        ],
-        systemInstruction: {
-            parts: [{ text: systemPrompt }]
-        }
+      contents: [
+        ...conversationHistory
+      ],
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      }
     };
 
     const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
-        throw new Error(`API request failed with status ${response.status}`);
+      throw new Error(`API request failed with status ${response.status}`);
     }
 
     messageElement.classList.remove('typing-indicator');
@@ -1023,132 +1057,122 @@ async function streamAssistantResponse(userInput, messageElement) {
     const decoder = new TextDecoder();
 
     while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      const { value, done } = await reader.read();
+      if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
 
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                try {
-                    const jsonStr = line.substring(6);
-                    const data = JSON.parse(jsonStr);
-                    const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (textPart) {
-                        fullResponseText += textPart;
-                        // Convert markdown to HTML with proper escaping
-                        const markdownToHtml = (text) => {
-                            let html = text
-                                .replace(/&/g, '&amp;')
-                                .replace(/</g, '&lt;')
-                                .replace(/>/g, '&gt;')
-                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                .replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>')
-                                .replace(/<\/ul>(\s*)<ul>/g, '$1');
-                            return html;
-                        };
-                        const dirtyHtml = markdownToHtml(fullResponseText);
-                        // Sanitize to prevent XSS attacks
-                        messageElement.innerHTML = DOMPurify.sanitize(dirtyHtml, {
-                            ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
-                            ALLOWED_ATTR: []
-                        });
-                        els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
-                    }
-                } catch (e) {
-                    // Ignore parsing errors for incomplete chunks
-                }
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const jsonStr = line.substring(6);
+            const data = JSON.parse(jsonStr);
+            const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (textPart) {
+              fullResponseText += textPart;
+              const markdownToHtml = (text) => {
+                let html = text
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                  .replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>')
+                  .replace(/<\/ul>(\s*)<ul>/g, '$1');
+                return html;
+              };
+              const dirtyHtml = markdownToHtml(fullResponseText);
+              messageElement.innerHTML = DOMPurify.sanitize(dirtyHtml, {
+                ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
+                ALLOWED_ATTR: []
+              });
+              els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
             }
+          } catch (e) {
+            // Ignore parsing errors for incomplete chunks
+          }
         }
+      }
     }
     conversationHistory.push({ role: 'model', parts: [{ text: fullResponseText }] });
-}
+  }
 
-// ====================================================================
-// Premium Animation Functions
-// ====================================================================
-
-function animateRatingRing(rating, confidence) {
-  const progressCircle = document.getElementById('rating-progress');
-  if (!progressCircle) return;
-  
-  // Map rating to percentage (0-100)
-  const ratingMap = {
-    'Center': 50,
-    'Lean Left': 35,
-    'Lean Right': 65,
-    'Strong Left': 15,
-    'Strong Right': 85,
-    'Left': 25,
-    'Right': 75,
-    'Unknown': 50,
-    'Unclear': 50
-  };
-  
-  const confidenceMultiplier = {
-    'High': 1,
-    'Medium': 0.8,
-    'Low': 0.6
-  };
-  
-  let targetPercent = ratingMap[rating] || 50;
-  const mult = confidenceMultiplier[confidence] || 0.8;
-  
-  // Calculate stroke dash offset (circumference = 2 * π * r = 2 * π * 54 ≈ 339.292)
-  const circumference = 339.292;
-  const offset = circumference - (targetPercent / 100) * circumference;
-  
-  // Animate with delay
-  setTimeout(() => {
-    if (progressCircle) {
-      progressCircle.style.strokeDashoffset = offset;
-      // Add dynamic color based on rating
-      const colorMap = {
-        'Center': '#10B981',
-        'Lean Left': '#3B82F6',
-        'Lean Right': '#3B82F6',
-        'Strong Left': '#8B5CF6',
-        'Strong Right': '#8B5CF6',
-        'Left': '#3B82F6',
-        'Right': '#3B82F6'
-      };
-      progressCircle.style.stroke = colorMap[rating] || '#F97316';
-    }
-  }, 300);
-}
-
-// Add scroll reveal animations
-function initScrollAnimations() {
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.style.opacity = '1';
-        entry.target.style.transform = 'translateY(0)';
+  // ========================================
+  // ANIMATIONS
+  // ========================================
+  function animateRatingRing(rating, confidence) {
+    const progressCircle = document.getElementById('rating-progress');
+    if (!progressCircle) return;
+    
+    const ratingMap = {
+      'Center': 50,
+      'Lean Left': 35,
+      'Lean Right': 65,
+      'Strong Left': 15,
+      'Strong Right': 85,
+      'Left': 25,
+      'Right': 75,
+      'Unknown': 50,
+      'Unclear': 50
+    };
+    
+    const confidenceMultiplier = {
+      'High': 1,
+      'Medium': 0.8,
+      'Low': 0.6
+    };
+    
+    let targetPercent = ratingMap[rating] || 50;
+    const mult = confidenceMultiplier[confidence] || 0.8;
+    
+    const circumference = 339.292;
+    const offset = circumference - (targetPercent / 100) * circumference;
+    
+    setTimeout(() => {
+      if (progressCircle) {
+        progressCircle.style.strokeDashoffset = offset;
+        const colorMap = {
+          'Center': '#10B981',
+          'Lean Left': '#3B82F6',
+          'Lean Right': '#3B82F6',
+          'Strong Left': '#8B5CF6',
+          'Strong Right': '#8B5CF6',
+          'Left': '#3B82F6',
+          'Right': '#3B82F6'
+        };
+        progressCircle.style.stroke = colorMap[rating] || '#F97316';
       }
+    }, 300);
+  }
+
+  function initScrollAnimations() {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
     });
-  }, {
-    threshold: 0.1,
-    rootMargin: '0px 0px -50px 0px'
-  });
-  
-  document.querySelectorAll('.analysis-card, .report-header').forEach(el => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(20px)';
-    el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-    observer.observe(el);
-  });
-}
+    
+    document.querySelectorAll('.analysis-card, .report-header').forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(20px)';
+      el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      observer.observe(el);
+    });
+  }
 
-// Initialize animations when DOM is loaded
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initScrollAnimations);
-} else {
-  initScrollAnimations();
-}
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initScrollAnimations);
+  } else {
+    initScrollAnimations();
+  }
 
-// Add smooth scroll behavior
-document.documentElement.style.scrollBehavior = 'smooth';
+  document.documentElement.style.scrollBehavior = 'smooth';
 
 })();
