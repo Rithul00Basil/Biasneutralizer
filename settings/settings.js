@@ -57,7 +57,8 @@
     savedApiKey: '',
     apiConnectionStatus: 'disconnected',
     apiConnectionMessage: 'Not connected',
-    analysisDepth: 'quick'
+    analysisDepth: 'quick',
+    assistantModel: 'on-device'
   };
 
   const elements = {};
@@ -91,6 +92,7 @@
     elements.apiFeedback = document.getElementById('api-feedback');
     elements.analysisRadios = document.querySelectorAll('input[name="analysis-depth"]');
     elements.applyButton = document.getElementById('apply-changes');
+    elements.assistantModelRadios = document.querySelectorAll('input[name="assistant-model"]');
     elements.advancedFeedback = document.getElementById('advanced-feedback');
     elements.backButton = document.getElementById('back-button');
   }
@@ -108,12 +110,16 @@
     if (elements.toggleKeyVisibility && elements.apiKeyInput) {
       elements.toggleKeyVisibility.addEventListener('click', (e) => {
         e.preventDefault();
-        const wasPassword = elements.apiKeyInput.getAttribute('type') === 'password';
-        elements.apiKeyInput.setAttribute('type', wasPassword ? 'text' : 'password');
-        syncVisibilityToggleIcon();
-        if (!state.savedApiKey && elements.apiKeyInput.value === '••••••••••') {
-          elements.apiKeyInput.value = '';
+        const isPassword = elements.apiKeyInput.getAttribute('type') === 'password';
+        if (isPassword) {
+          // Switching to text: show the real key from state
+          elements.apiKeyInput.setAttribute('type', 'text');
+          elements.apiKeyInput.value = state.savedApiKey || state.geminiApiKey;
+        } else {
+          // Switching to password: hide the key
+          elements.apiKeyInput.setAttribute('type', 'password');
         }
+        syncVisibilityToggleIcon();
       });
     }
 
@@ -127,6 +133,10 @@
 
     elements.analysisRadios.forEach((radio) => {
       radio.addEventListener('change', handleAnalysisSelection);
+    });
+
+    elements.assistantModelRadios.forEach((radio) => {
+      radio.addEventListener('change', handleAssistantModelSelection);
     });
 
     if (elements.applyButton) {
@@ -173,7 +183,8 @@
         'geminiApiKey',
         'apiConnectionStatus',
         'apiConnectionMessage',
-        'analysisDepth'
+        'analysisDepth',
+        'assistantModel'
       ]);
 
       const storedApiKey = typeof stored.geminiApiKey === 'string' ? stored.geminiApiKey : '';
@@ -181,11 +192,15 @@
       state.savedApiKey = storedApiKey;
 
       if (elements.apiKeyInput) {
-        elements.apiKeyInput.value = storedApiKey ? '••••••••••' : '';
+        elements.apiKeyInput.value = '';
+        elements.apiKeyInput.placeholder = storedApiKey ? '•••••••••••••••••••• (saved)' : 'Paste your Gemini API key';
       }
       
       state.analysisDepth = stored.analysisDepth || state.analysisDepth;
       syncRadioGroup(elements.analysisRadios, state.analysisDepth);
+
+      state.assistantModel = stored.assistantModel || state.assistantModel;
+      syncRadioGroup(elements.assistantModelRadios, state.assistantModel);
 
       const hasStoredStatus = storedApiKey && stored.apiConnectionStatus;
       if (hasStoredStatus) {
@@ -260,11 +275,12 @@
 
   const saveApiKeyDebounced = debounce(async () => {
     if (!elements.apiKeyInput) return;
-    const raw = elements.apiKeyInput.value || '';
-    const newKey = (raw === '••••••••••') ? state.savedApiKey : raw.trim();
-    const payload = { settings: { geminiApiKey: newKey, analysisDepth: state.analysisDepth || 'quick' } };
+    const newKey = (elements.apiKeyInput.value.trim() && elements.apiKeyInput.value.indexOf('•') === -1) ? elements.apiKeyInput.value.trim() : state.savedApiKey;
+    const payload = { settings: { geminiApiKey: newKey, analysisDepth: state.analysisDepth || 'quick', assistantModel: state.assistantModel || 'on-device' } };
     payload.geminiApiKey = newKey;
+    state.savedApiKey = newKey;
     payload.analysisDepth = state.analysisDepth || 'quick';
+    payload.assistantModel = state.assistantModel || 'on-device';
     await storageSet(payload);
   }, 400);
 
@@ -280,7 +296,7 @@
       };
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/Gemini 2.5 Flash-Lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {
@@ -336,10 +352,11 @@
     const button = event.currentTarget;
     flashButton(button);
 
-    let apiKey = (state.geminiApiKey || '').trim();
-    if (elements.apiKeyInput && elements.apiKeyInput.value === '••••••••••') {
-      apiKey = state.savedApiKey || '';
-    }
+    // Always use the most up-to-date key from state or input
+    const apiKey = (elements.apiKeyInput.value.trim() && elements.apiKeyInput.value !== '••••••••••')
+      ? elements.apiKeyInput.value.trim()
+      : (state.savedApiKey || '');
+
     if (!apiKey) {
       updateConnectionStatus('error', 'API key required');
       showFeedback(elements.apiFeedback, 'Enter your Gemini API key before testing.', 'error');
@@ -385,8 +402,7 @@
     flashButton(button);
     const finish = setButtonWorking(button, 'Saving...');
 
-    const raw = elements.apiKeyInput ? elements.apiKeyInput.value : '';
-    const apiKey = (raw === '••••••••••') ? state.savedApiKey : (raw || '').trim();
+    const apiKey = (elements.apiKeyInput.value || '').trim();
     state.geminiApiKey = apiKey;
     state.savedApiKey = apiKey;
 
@@ -400,10 +416,11 @@
       showFeedback(elements.apiFeedback, 'API key saved.', 'success');
     }
 
+    const settingsPayload = { geminiApiKey: apiKey, analysisDepth: state.analysisDepth || 'quick', assistantModel: state.assistantModel || 'on-device' };
     const ok = await storageSet({
-      settings: { geminiApiKey: apiKey, analysisDepth: state.analysisDepth || 'quick' },
+      settings: settingsPayload,
       geminiApiKey: apiKey,
-      analysisDepth: state.analysisDepth || 'quick',
+      ...settingsPayload,
       apiConnectionStatus: state.apiConnectionStatus,
       apiConnectionMessage: state.apiConnectionMessage
     });
@@ -420,6 +437,10 @@
 
   function handleAnalysisSelection(event) {
     state.analysisDepth = event.target.value;
+  }
+
+  function handleAssistantModelSelection(event) {
+    state.assistantModel = event.target.value;
     showFeedback(elements.advancedFeedback, '');
   }
 
@@ -429,7 +450,8 @@
     const finish = setButtonWorking(button, 'Applying...');
 
     try {
-      const ok = await storageSet({ settings: { analysisDepth: state.analysisDepth, geminiApiKey: state.savedApiKey || '' }, analysisDepth: state.analysisDepth });
+      const settingsPayload = { analysisDepth: state.analysisDepth, assistantModel: state.assistantModel, geminiApiKey: state.savedApiKey || '' };
+      const ok = await storageSet({ settings: settingsPayload, ...settingsPayload });
       if (!ok) throw new Error('storageSet failed');
       showFeedback(elements.advancedFeedback, 'Preferences applied.', 'success');
       finish('Applied!', 1400);

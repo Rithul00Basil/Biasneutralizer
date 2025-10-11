@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -23,150 +23,156 @@
         <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
       </div>
     </div>
-  
-    <!-- Status Card -->
-    <div class="status-card">
-      <div class="card-background"></div>
-      <div class="card-content">
-        <div class="status-row">
-          <span class="status-label">Status:</span>
-          <span class="status-value">Waiting for news</span>
-        </div>
-        <div class="status-row">
-          <div class="status-item">
-            <span class="status-icon">🔒</span>
-            <span class="status-label">Private Mode:</span>
-          </div>
-          <div class="toggle" id="private-toggle" title="Private (On-device) — fast, offline, privacy-preserving. Deep (Cloud) — opt-in for very long articles, multi-source compare, or heavy reasoning. Your text will be sent to your configured provider when Deep is enabled.">
-            <div class="toggle-knob"></div>
-          </div>
-        </div>
-        <div class="status-row">
-          <div class="status-item">
-            <span class="status-icon">⚡</span>
-            <span class="status-label">Real-time:</span>
-          </div>
-          <div class="toggle on" id="realtime-toggle">
-            <div class="toggle-knob"></div>
-          </div>
-        </div>
+<!-- Status Card -->
+<div class="status-card">
+  <div class="card-background"></div>
+  <div class="card-content">
+    <div class="status-row">
+      <span class="status-label">Status:</span>
+      <span class="status-value">Waiting for news</span>
+    </div>
+    <div class="status-row">
+      <div class="status-item">
+        <span class="status-icon">🔒</span>
+        <span class="status-label">Private Mode:</span>
+      </div>
+      <div class="toggle" id="private-toggle" title="Private (On-device) — fast, offline, privacy-preserving. Deep (Cloud) — opt-in for very long articles, multi-source compare, or heavy reasoning. Your text will be sent to your configured provider when Deep is enabled.">
+        <div class="toggle-knob"></div>
       </div>
     </div>
-  
-    <!-- Detection Helper -->
-    <div class="detection-helper">
-      Detected: CNN.com article ready for analysis
-    </div>
-
-    <!-- CTA Button -->
-    <button class="cta-button">
-      Scan for bias
-    </button>
-
-    <!-- Analysis Dashboard -->
-    <div class="analysis-dashboard">
-      <!-- Analysis Summary -->
-      <div id="analysis-summary" class="analysis-section">
-        <h3 class="section-title">Analysis Summary</h3>
-        <p class="section-content">Overall rhetorical analysis results will appear here after scanning. This includes the dominant persuasive strategies and their impact on reader perception.</p>
+    <div class="status-row">
+      <div class="status-item">
+        <span class="status-icon">⚡</span>
+        <span class="status-label">Real-time:</span>
       </div>
-
-      <!-- Emotional Language Section -->
-      <div id="emotional-language-section" class="analysis-section">
-        <h3 class="section-title">Emotional Language Analysis</h3>
-        <div class="section-content">
-          <p>Emotional triggers and loaded terminology analysis:</p>
-          <div class="emotion-metrics">
-            <div class="metric-item">
-              <span class="metric-label">Overall Score:</span>
-              <span class="metric-value">-/10</span>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Fear Appeals:</span>
-              <span class="metric-value">-/10</span>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Anger Triggers:</span>
-              <span class="metric-value">-/10</span>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Loaded Terms:</span>
-              <span class="metric-value">-/10</span>
-            </div>
-          </div>
-          <div class="examples-list">
-            <p><em>Examples will appear after analysis</em></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Rhetorical Devices Section -->
-      <div id="rhetorical-devices-section" class="analysis-section">
-        <h3 class="section-title">Rhetorical Devices</h3>
-        <div class="section-content">
-          <p>Persuasive techniques and narrative strategies identified:</p>
-          <div class="devices-list">
-            <p><em>Rhetorical devices will be listed here after analysis, including their instances and effects on reader perception.</em></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Logical Fallacies Section -->
-      <div id="logical-fallacies-section" class="analysis-section">
-        <h3 class="section-title">Logical Fallacies</h3>
-        <div class="section-content">
-          <p>Reasoning flaws and logical inconsistencies detected:</p>
-          <div class="fallacies-list">
-            <p><em>Logical fallacies will be displayed here with examples and explanations of their misleading impact.</em></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Source Credibility Section -->
-      <div id="source-credibility-section" class="analysis-section">
-        <h3 class="section-title">Source Credibility</h3>
-        <div class="section-content">
-          <p>Publisher reliability and trustworthiness assessment:</p>
-          <div class="credibility-metrics">
-            <div class="metric-item">
-              <span class="metric-label">Credibility Tier:</span>
-              <span class="metric-value">Unknown</span>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Bias Alignment:</span>
-              <span class="metric-value">Unknown</span>
-            </div>
-            <div class="metric-item">
-              <span class="metric-label">Factual Reporting:</span>
-              <span class="metric-value">-/10</span>
-            </div>
-          </div>
-          <p><em>Detailed credibility analysis will appear after scanning.</em></p>
-        </div>
+      <div class="toggle on" id="realtime-toggle">
+        <div class="toggle-knob"></div>
       </div>
     </div>
+  </div>
+</div>
 
-    <!-- Bottom Utility Bar -->
-    <div class="utility-bar">
-      <a href="#" class="utility-item" id="settings-button">
-        <span class="utility-icon">⚙️</span>
-        <span>Settings</span>
-      </a>
-      <a href="#" class="utility-item" id="reports-button">
-        <span class="utility-icon">📈</span>
-        <span>Reports</span>
-      </a>
-      <a href="#" class="utility-item" id="help-button">
-        <span class="utility-icon">❓</span>
-        <span>Help</span>
-      </a>
-    </div>
+<!-- Detection Helper -->
+<div class="detection-helper">
+  Detected: CNN.com article ready for analysis
+</div>
 
-    <!-- Notification Toast -->
-    <div id="notification-toast">
-      <span></span>
+<!-- CTA Button -->
+<button class="cta-button">
+  Scan for bias
+</button>
+<div id="results-modal-container" class="modal-hidden">
+  <div class="results-modal-content">
+    <p>Analysis Complete!</p>
+    <a id="view-results-button" class="secondary-button" href="#">
+      View Last Results
+    </a>
+    <button id="close-modal-button" class="close-button">&times;</button>
+  </div>
+</div>
+<!-- Analysis Dashboard -->
+<div class="analysis-dashboard">
+  <!-- Analysis Summary -->
+  <div id="analysis-summary" class="analysis-section">
+    <h3 class="section-title">Analysis Summary</h3>
+    <p class="section-content">Overall rhetorical analysis results will appear here after scanning. This includes the dominant persuasive strategies and their impact on reader perception.</p>
+  </div>
+
+  <!-- Emotional Language Section -->
+  <div id="emotional-language-section" class="analysis-section">
+    <h3 class="section-title">Emotional Language Analysis</h3>
+    <div class="section-content">
+      <p>Emotional triggers and loaded terminology analysis:</p>
+      <div class="emotion-metrics">
+        <div class="metric-item">
+          <span class="metric-label">Overall Score:</span>
+          <span class="metric-value">-/10</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Fear Appeals:</span>
+          <span class="metric-value">-/10</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Anger Triggers:</span>
+          <span class="metric-value">-/10</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Loaded Terms:</span>
+          <span class="metric-value">-/10</span>
+        </div>
+      </div>
+      <div class="examples-list">
+        <p><em>Examples will appear after analysis</em></p>
+      </div>
     </div>
-    
+  </div>
+
+  <!-- Rhetorical Devices Section -->
+  <div id="rhetorical-devices-section" class="analysis-section">
+    <h3 class="section-title">Rhetorical Devices</h3>
+    <div class="section-content">
+      <p>Persuasive techniques and narrative strategies identified:</p>
+      <div class="devices-list">
+        <p><em>Rhetorical devices will be listed here after analysis, including their instances and effects on reader perception.</em></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logical Fallacies Section -->
+  <div id="logical-fallacies-section" class="analysis-section">
+    <h3 class="section-title">Logical Fallacies</h3>
+    <div class="section-content">
+      <p>Reasoning flaws and logical inconsistencies detected:</p>
+      <div class="fallacies-list">
+        <p><em>Logical fallacies will be displayed here with examples and explanations of their misleading impact.</em></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Source Credibility Section -->
+  <div id="source-credibility-section" class="analysis-section">
+    <h3 class="section-title">Source Credibility</h3>
+    <div class="section-content">
+      <p>Publisher reliability and trustworthiness assessment:</p>
+      <div class="credibility-metrics">
+        <div class="metric-item">
+          <span class="metric-label">Credibility Tier:</span>
+          <span class="metric-value">Unknown</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Bias Alignment:</span>
+          <span class="metric-value">Unknown</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">Factual Reporting:</span>
+          <span class="metric-value">-/10</span>
+        </div>
+      </div>
+      <p><em>Detailed credibility analysis will appear after scanning.</em></p>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Utility Bar -->
+<div class="utility-bar">
+  <a href="#" class="utility-item" id="settings-button">
+    <span class="utility-icon">⚙️</span>
+    <span>Settings</span>
+  </a>
+  <a href="#" class="utility-item" id="reports-button">
+    <span class="utility-icon">📈</span>
+    <span>Reports</span>
+  </a>
+  <a href="#" class="utility-item" id="help-button">
+    <span class="utility-icon">❓</span>
+    <span>Help</span>
+  </a>
+</div>
+
+<!-- Notification Toast -->
+<div id="notification-toast">
+  <span></span>
+</div>
 <div id="animation-container">
   <button id="cancel-scan-button" class="cancel-button">&times;</button>
   <div class="bn-scanner">
@@ -191,7 +197,6 @@
   </div>
   <p id="scan-status-text" class="scan-status">Initializing scan...</p>
 </div>  
-  
 <script src="sidepanel.js" type="module"></script>
 </body>
 </html>

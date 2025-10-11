@@ -6,65 +6,112 @@
   <title>BiasNeutralizer • Results</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
   <link rel="stylesheet" href="results.css" />
   <link rel="icon" href="../icons/icon32.png" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#0F172A" />
-  <style>html,body{height:100%}</style>
-  
+  <style>html,body{min-height:100%;margin:0;padding:0;}</style>
+
 </head>
 <body>
   <div class="panel-container results-container">
-    <div class="results-top-row">
-      <button class="back-link" type="button" id="open-sidepanel">
-        <span class="back-icon">←</span>
-        <span>Open Side Panel</span>
+    <!-- Floating Background Orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    
+    <header class="results-top-row">
+      <a class="results-title" href="#">
+        <div class="header-icon">
+          <img src="../assets/logo.svg" alt="Logo" />
+        </div>
+        <h1 class="product-name">BiasNeutralizer</h1>
+      </a>
+      <button id="back-to-sidepanel" class="back-link" aria-label="Back to Sidepanel">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+        Back to Sidepanel
       </button>
-      <div class="results-title">
-        <h1 class="product-name">
-          <span class="bias">Bias</span><span class="neutralizer">Neutralizer</span>
-        </h1>
-        <p class="subtitle">Latest analysis results</p>
+    </header>
+
+    <main class="results-main-content">
+      <!-- Loading State -->
+      <div class="loading-state" id="loading-state">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Loading analysis results...</p>
       </div>
-      <div class="header-icon">
-        <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
-      </div>
-    </div>
 
-    <div class="bias-hero initially-hidden">
-      <div class="bias-rating" id="bias-rating">—</div>
-      <div class="bias-confidence" id="bias-confidence">—</div>
-    </div>
-
-    <div id="on-device-warning" class="on-device-warning" title="This article is long/complex. For deeper comparison and longer summaries, you can opt into Deep Analysis (cloud). Your text will be sent to your configured provider.">
-      <span class="warning-icon">ℹ️</span>
-      <span class="warning-text"><strong>Private (On-device)</strong> — fast, offline, privacy-preserving. <br><strong>Deep (Cloud)</strong> — opt-in for very long articles, multi-source compare, or heavy reasoning.</span>
-    </div>
-
-    <div class="results-card-content">
-        <header class="report-header">
+      <div class="bias-hero initially-hidden">
+        <div class="hero-rating-visual">
+          <div class="bias-rating-container">
+            <div class="bias-rating" id="bias-rating">—</div>
+          </div>
+          <div class="bias-confidence" id="bias-confidence">—</div>
+        </div>
+        <div class="hero-details">
           <div class="report-meta">
+            <div class="article-badge">ANALYZED ARTICLE</div>
             <a id="article-title" class="article-title" href="#" target="_blank" rel="noopener">No analysis yet</a>
             <div class="article-submeta">
-              <span id="article-domain">—</span>
-              <span aria-hidden="true">•</span>
-              <time id="analysis-time">—</time>
+              <span class="meta-item">
+                <span class="meta-icon">🌐</span>
+                <span id="article-domain">—</span>
+              </span>
+              <span class="meta-divider">•</span>
+              <span class="meta-item">
+                <span class="meta-icon">⏱️</span>
+                <time id="analysis-time">—</time>
+              </span>
               <span class="source-chip" id="analysis-source" hidden>—</span>
             </div>
           </div>
-          <div class="report-actions">
-            <button class="primary-button" id="open-article" disabled>Open Article</button>
+          
+        </div>
+      </div>
+
+      <div class="assistant-trigger-container">
+        <div class="assistant-input-bar" id="assistant-trigger">
+            <span class="assistant-placeholder">Ask anything about this analysis...</span>
+        </div>
+        <div class="prompt-starters">
+            <button class="prompt-starter-btn" data-prompt="Explain this rating in simple terms.">"Explain this rating..."</button>
+            <button class="prompt-starter-btn" data-prompt="What was the strongest bias indicator found?">"What was the strongest indicator?"</button>
+            <button class="prompt-starter-btn" data-prompt="Show me the most loaded phrase.">"Show me the most loaded phrase."</button>
+        </div>
+      </div>
+
+
+      <div class="analysis-cards-container">
+          <!-- Card 1: Article Summary (moved above Findings) -->
+          <div class="analysis-card" id="article-summary-card">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">📄</span>
+                <h2 class="card-title">Article Summary</h2>
+              </div>
+              <div class="card-body" id="summary-content">
+                <p class="placeholder-text">Generating on-device summary...</p>
+              </div>
+            </div>
           </div>
-        </header>
 
-    </div>
-
-    <!-- Analysis Results Cards -->
-    <div class="analysis-cards-container">
-          <!-- Card 1: Findings -->
-          <div class="analysis-card">
+          <!-- Card 2: Findings -->
+          <div class="analysis-card analysis-card--findings">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
@@ -77,8 +124,23 @@
             </div>
           </div>
 
-          <!-- Card 2: Biased Languages Used -->
-          <div class="analysis-card">
+          <!-- Card 3: Tribunal Verdicts (NEW) -->
+          <div class="analysis-card analysis-card--tribunal" id="tribunal-verdicts-card" style="display: none;">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">⚖️</span>
+                <h2 class="card-title">Tribunal Verdicts</h2>
+                <p class="card-subtitle">Adversarial debate between Prosecutor and Defense</p>
+              </div>
+              <div class="card-body" id="tribunal-verdicts-content">
+                <p class="placeholder-text">No tribunal data available</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Biased Languages Used -->
+          <div class="analysis-card analysis-card--warning">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
@@ -91,8 +153,8 @@
             </div>
           </div>
 
-          <!-- Card 3: Neutral Languages Used -->
-          <div class="analysis-card">
+          <!-- Card 5: Neutral Languages Used -->
+          <div class="analysis-card analysis-card--success">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
@@ -105,7 +167,7 @@
             </div>
           </div>
 
-          <!-- Card 4: Methodology Note (Collapsible) -->
+          <!-- Card 6: Methodology Note (Collapsible) -->
           <details class="analysis-card methodology-card">
             <summary class="card-header collapsible">
               <span class="card-icon">📋</span>
@@ -115,15 +177,38 @@
             <div class="card-content">
               <div class="card-body" id="methodology-content">
                 <p class="methodology-text">
-                  Our analysis distinguishes between <strong>source bias</strong> (bias in quoted material) and <strong>journalistic bias</strong> (bias in the narrative framing, word choice, and presentation). 
+                  Our analysis distinguishes between <strong>source bias</strong> (bias in quoted material) and <strong>journalistic bias</strong> (bias in the narrative framing, word choice, and presentation).
                   We focus on identifying how the author's language, tone, and structure may influence the reader's perception beyond the facts presented.
                 </p>
               </div>
             </div>
           </details>
         </div>
+    </main>
+
+  <div class="assistant-overlay" id="assistant-overlay" style="display: none;">
+      <div class="assistant-modal" id="assistant-modal">
+          <div class="assistant-header">
+              <h3 class="assistant-title">Assistant</h3>
+              <button class="assistant-close-btn" id="assistant-close-btn">&times;</button>
+          </div>
+          <div class="assistant-chat-window" id="assistant-chat-window">
+              <div class="assistant-message assistant-notification" id="assistant-first-use-notice" style="display: none;">
+                  <p><strong>Quick Tip:</strong> The assistant is currently using a fast, private on-device model. For more powerful responses, you can switch to the Cloud API in the extension's settings.</p>
+              </div>
+          </div>
+          <div class="assistant-footer">
+              <form id="assistant-form" class="assistant-form">
+                  <input type="text" id="assistant-input" class="assistant-input" placeholder="Ask a follow-up..." autocomplete="off">
+                    <button type="submit" class="assistant-send-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                    </button>
+              </form>
+          </div>
+      </div>
   </div>
 
+  <script src="../shared/purify.min.js"></script>
   <script src="results.js" type="module"></script>
 </body>
 </html>

@@ -161,21 +161,21 @@ document.addEventListener('DOMContentLoaded', () => {
     MAX_PARAGRAPHS_TO_ANALYZE: 10,
     
     PHASE_1_MESSAGES: [
-      "Preparing your article for analysis…",
-      "Scanning language tone and sentiment…",
-      "Detecting possible bias patterns…",
-      "Spotting emotionally charged phrases…",
-      "Checking rhetorical devices in use…",
+      "Preparing your article for analysis...",
+      "Scanning language tone and sentiment...",
+      "Detecting possible bias patterns...",
+      "Spotting emotionally charged phrases...",
+      "Checking rhetorical devices in use...",
     ],
     
     PHASE_2_MESSAGES: [
-      "Highlighting logical fallacies…",
-      "Comparing source credibility metrics…",
-      "Analyzing balance of perspectives…",
-      "Evaluating neutrality of wording…",
-      "Looking for cherry-picked examples…",
-      "Measuring evidence vs opinion ratio…",
-      "Cross-referencing fact consistency…",
+      "Highlighting logical fallacies...",
+      "Comparing source credibility metrics...",
+      "Analyzing balance of perspectives...",
+      "Evaluating neutrality of wording...",
+      "Looking for cherry-picked examples...",
+      "Measuring evidence vs opinion ratio...",
+      "Cross-referencing fact consistency...",
     ],
   };
 
@@ -192,6 +192,9 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelScanButton: document.querySelector('#cancel-scan-button'),
     statusText: document.querySelector('#scan-status-text'),
     settingsButton: document.querySelector('#settings-button'),
+    viewResultsButton: document.getElementById('view-results-button'),
+    resultsModalContainer: document.getElementById('results-modal-container'),
+    closeModalButton: document.getElementById('close-modal-button'),
   };
 
   // Validate all required elements exist (except optional animation container)
@@ -393,11 +396,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================
   
   /**
-   * Opens results page with analysis data
+   * Persists the latest analysis results for later viewing
    */
-  async function openResultsPage(analysisData, source, articleInfo) {
+  async function saveAnalysisResults(analysisData, source, articleInfo) {
     if (!validateChromeAPI()) {
-      showError('Cannot open results page: Chrome APIs unavailable');
+      showError('Cannot save analysis results: Chrome APIs unavailable');
       return;
     }
 
@@ -408,11 +411,11 @@ document.addEventListener('DOMContentLoaded', () => {
         hasSource: !!source,
         hasArticleInfo: !!articleInfo,
       });
-      showError('Cannot display results: Invalid analysis data');
+      showError('Cannot save results: Invalid analysis data');
       return;
     }
 
-    console.log('[BiasNeutralizer] ===== OPENING RESULTS PAGE =====');
+    console.log('[BiasNeutralizer] ===== SAVING ANALYSIS RESULTS =====');
     console.log('[BiasNeutralizer] analysisData type:', typeof analysisData);
     console.log('[BiasNeutralizer] analysisData value:', analysisData);
     console.log('[BiasNeutralizer] analysisData length:', typeof analysisData === 'string' ? analysisData.length : 'N/A');
@@ -441,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
         source: source,
         contentLength: articleInfo.fullText?.length || 0,
         paragraphCount: articleInfo.paragraphs?.length || 0,
+        fullText: articleInfo.fullText || '', 
         timestamp: Date.now()
       },
     };
@@ -461,26 +465,60 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    try {
-      const resultsUrl = chrome.runtime.getURL('results/results.html');
-      await chrome.tabs.create({ url: resultsUrl });
-      console.log('[BiasNeutralizer] Results page opened successfully');
-    } catch (error) {
-      console.error('[BiasNeutralizer] Failed to open results page:', error);
-      showError(
-        'Failed to open results page.',
-        'The analysis was saved but the results page could not be opened.'
-      );
+    if (elements.resultsModalContainer) {
+      elements.resultsModalContainer.classList.remove('modal-hidden');
+      elements.resultsModalContainer.classList.add('modal-visible');
     }
+    console.log('[BiasNeutralizer] Analysis results saved to storage');
   }
 
   // ========================================
   // AI SCANNING
   // ========================================
-  
 
   /**
-   * Scans article using on-device AI
+   * Triggers a separate, on-device summary generation process.
+   * This runs independently of the main bias scan.
+   */
+  async function triggerOnDeviceSummary(articleContent) {
+    console.log('[BiasNeutralizer] Starting independent on-device summary...');
+
+    // Save a placeholder immediately so the UI can show a "generating" state
+    await safeStorageSet({ lastSummary: { status: 'generating' } });
+
+    if (!('Summarizer' in self)) {
+      await safeStorageSet({ lastSummary: { status: 'error', data: 'Summarizer API not supported.' } });
+      return;
+    }
+
+    try {
+      const availability = await Summarizer.availability();
+      if (availability === 'unavailable') {
+        throw new Error('On-device model is not available on this device.');
+      }
+
+      const summarizer = await Summarizer.create({
+        type: 'key-points',
+        format: 'markdown',
+        length: 'long' // Ask for a long, detailed summary
+      });
+
+      const summaryMarkdown = await summarizer.summarize(articleContent.fullText, {
+        context: 'Generate detailed, standalone key points for a news article analysis. Each point should be a complete sentence or two.'
+      });
+
+      // Save the successful summary
+      await safeStorageSet({ lastSummary: { status: 'complete', data: summaryMarkdown } });
+      console.log('[BiasNeutralizer] On-device summary complete and saved.');
+
+    } catch (error) {
+      console.error('Independent summary failed:', error);
+      await safeStorageSet({ lastSummary: { status: 'error', data: error.message } });
+    }
+  }
+
+  /**
+   * Scans article using on-device AI with a "chunking" strategy to handle large texts.
    */
   async function scanWithOnDeviceAI(articleContent) {
     if (state.isScanning) {
@@ -492,353 +530,91 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.scanButton.disabled = true;
     setView('scanning');
     startStatusUpdates();
-    
+
     try {
+      // --- Immediately trigger the separate on-device summary ---
+      triggerOnDeviceSummary(articleContent);
+
       const availability = await window.LanguageModel.availability();
       if (availability !== 'available') {
-        setView('default');
-        stopStatusUpdates();
-        state.isScanning = false;
-        elements.scanButton.disabled = false;
-        showNotification(`On-device AI is not ready. Status: ${availability}`, 'error');
-        return;
-      }
-      
-      console.log("--- Starting Quick Bias Analysis ---");
-      state.currentSession = await window.LanguageModel.create();
-      const textToSend = (articleContent.fullText || '').slice(0, 6000);
-      
-      // PHASE 1: Context Agent with Article Type Detection
-      console.log("Phase 1: Context Agent...");
-      const contextPrompt = `Classify article type objectively. DO NOT search for bias.
-
-ARTICLE_TYPE: News/Opinion/Analysis/Satire/Academic/Other
-IS_NEWS: Yes/No (Yes only if straight news reporting)
-SUMMARY: [exactly ten words]
-TONE: Neutral/Emotional/Analytical/Mixed
-QUOTE_RATIO: Low/Medium/High (0-30%/31-60%/61-100%)
-QUOTE_PERCENTAGE: [0-100]
-CONFIDENCE: High/Medium/Low
-
-TEXT:
-${textToSend}`;
-
-      const contextResponse = await state.currentSession.prompt(contextPrompt);
-      console.log("--- CONTEXT AGENT ---");
-      console.log(contextResponse);
-
-      // Extract context
-      const contextLines = contextResponse.split('\n');
-      const articleType = contextLines.find(l => l.startsWith('ARTICLE_TYPE:'))?.split(':')[1]?.trim() || 'Unknown';
-      const isNews = contextLines.find(l => l.startsWith('IS_NEWS:'))?.split(':')[1]?.trim() === 'Yes';
-      const summary = contextLines.find(l => l.startsWith('SUMMARY:'))?.split(':')[1]?.trim() || '';
-      const tone = contextLines.find(l => l.startsWith('TONE:'))?.split(':')[1]?.trim() || 'Neutral';
-      const quoteRatio = contextLines.find(l => l.startsWith('QUOTE_RATIO:'))?.split(':')[1]?.trim() || 'Unknown';
-      
-      const contextData = `${articleType} article (News: ${isNews}). ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio}.`;
-      console.log("Context:", contextData);
-
-      // PHASE 2: Run 3 Agents (Only if News article)
-      console.log("Phase 2: Running 3 specialized agents...");
-
-      // Agent 1: Language Decoder - FIXED with stricter requirements
-      const languagePrompt = `Context: ${contextData}
-
-NARRATIVE TEXT ONLY. Skip all quoted content.
-
-Flag ONLY if ALL these conditions met:
-1. Phrase contains value-laden adjectives/adverbs/verbs
-2. A neutral alternative exists that preserves meaning
-3. NOT supported by facts/data in article
-
-NEVER flag:
-- Statistics or data-backed claims
-- Technical/legal terminology
-- Descriptions supported by evidence
-
-Format:
-- PHRASE: "exact phrase"
-  WHY: specific bias (not just "loaded")
-  NEUTRAL_ALT: alternative wording
-  CONTEXT: surrounding text
-
-NEUTRALITY: [0-10] (10 = perfectly neutral)
-CONFIDENCE: High/Medium/Low
-SUMMARY: one sentence
-
-TEXT:
-${textToSend}`;
-
-      // Agent 2: Bias Hunter - FIXED with higher evidence bar
-      const hunterPrompt = `Context: ${contextData}
-
-NARRATIVE TEXT ONLY. Default assumption: Article is CENTER/NEUTRAL.
-
-Flag ONLY if you find ≥2 INDEPENDENT indicators from this list:
-- Framing: Essential counter-facts buried after para 8
-- Sourcing: >80% sources favor one viewpoint with no balance
-- Language: Multiple unsupported value judgments
-- Causality: Correlation presented as causation without evidence
-- Editorial: Direct moral judgments without attribution
-
-Format:
-- TYPE: [from list above]
-  EXAMPLE: "exact text"
-  WHY: specific evidence of bias
-  STRENGTH: Low/Medium/High (High = clear violation)
-  LOCATION: paragraph number
-
-OVERALL_BIAS: Center (default unless strong evidence)
-CONFIDENCE: High/Medium/Low
-
-Require ≥2 High-strength OR ≥3 Medium-strength indicators to move from Center.
-
-TEXT:
-${textToSend}`;
-
-      // Agent 3: Bias Skeptic - FIXED to properly credit balance
-      const skepticPrompt = `Context: ${contextData}
-
-Find genuine balance/quality journalism indicators.
-
-Credit as balanced when:
-- Multiple credible perspectives included
-- Attribution is transparent
-- Context/background provided
-- Uncertainties acknowledged
-- Complexity not oversimplified
-
-Format:
-- TYPE: Sourcing/Attribution/Context/Nuance/Transparency
-  EXAMPLE: "text"
-  WHY: why this shows balance
-
-BALANCE_SCORE: 0-10 (8+ = highly balanced)
-CONFIDENCE: High/Medium/Low
-STRENGTHS: one sentence
-
-TEXT:
-${textToSend}`;
-
-      // Execute all 3 agents in parallel
-      const [languageResponse, hunterResponse, skepticResponse] = await Promise.all([
-        state.currentSession.prompt(languagePrompt),
-        state.currentSession.prompt(hunterPrompt),
-        state.currentSession.prompt(skepticPrompt)
-      ]);
-      
-      console.log("--- LANGUAGE AGENT ---");
-      console.log(languageResponse);
-
-      console.log("--- HUNTER AGENT ---");
-      console.log(hunterResponse);
-
-      console.log("--- SKEPTIC AGENT ---");
-      console.log(skepticResponse);
-
-      // Quote Agent (for weighting source vs narrative loaded language)
-      const quotePrompt = AgentPrompts.createQuotePrompt(contextData, textToSend);
-      const quoteResponse = await state.currentSession.prompt(quotePrompt);
-      console.log("--- QUOTE AGENT ---");
-      console.log(quoteResponse);
-
-      // Check if deep mode (based on settings)
-      const settings = await safeStorageGet(['analysisDepth']);
-      const isDeepMode = settings?.analysisDepth === 'deep';
-      let moderatorBudget = 0;
-      if (!isDeepMode) {
-        // keep quick scans fast; small budget for final synthesis stability
-        moderatorBudget = 8;
+        throw new Error(`On-device AI is not ready. Status: ${availability}`);
       }
 
-      let sourceDiversityResponse = '';
-      let framingResponse = '';
-      let omissionResponse = '';
+      console.log("--- Starting On-Device Chunk Analysis ---");
+      const session = await window.LanguageModel.create();
+      state.currentSession = session;
 
-      if (isDeepMode) {
-        console.log("Phase 2.5: Deep mode - Running specialized agents...");
-        
-        // Source Diversity Agent - FIXED
-        const sourceDiversityPrompt = `Context: ${contextData}
-
-Analyze source diversity. Remember: not all articles need partisan balance.
-
-SOURCE_BREAKDOWN:
-- official: #
-- expert: #
-- stakeholder: #
-- advocacy: #
-- partisan_left: # / partisan_right: #
-- other: #
-
-CONTEXT: Adversarial/Non-Adversarial/Not-Applicable
-GENDER: Balanced/Male-dominated/Female-dominated/Unknown
-POSITIONING: lead vs close sources
-MISSING_VOICES: ONLY list if clearly relevant and feasible
-DIVERSITY_SCORE: 0-10
-CONFIDENCE: High/Medium/Low
-ASSESSMENT: one sentence
-
-TEXT:
-${textToSend}`;
-
-        sourceDiversityResponse = await state.currentSession.prompt(sourceDiversityPrompt);
-        console.log("--- SOURCE DIVERSITY AGENT ---");
-        console.log(sourceDiversityResponse);
-
-        // Framing Agent - FIXED
-        const framingPrompt = `Context: ${contextData}
-
-Check story structure. Standard inverted pyramid is NOT manipulation.
-
-HEADLINE_TONE: Neutral/Sensational/Misleading/Balanced
-MATCHES_CONTENT: true/false
-EXPLANATION: brief
-LEAD_FOCUS: first 3 paragraphs summary
-BURIED_INFO: ONLY list if contradicts lead claims
-MANIPULATION_FLAGS: ONLY if headline contradicts body
-FRAMING_SCORE: 0-10 (10 = perfectly structured)
-CONFIDENCE: High/Medium/Low
-ASSESSMENT: one sentence
-
-TEXT:
-${textToSend}`;
-
-        framingResponse = await state.currentSession.prompt(framingPrompt);
-        console.log("--- FRAMING AGENT ---");
-        console.log(framingResponse);
-
-        // Omission Agent - FIXED
-        const omissionPrompt = `Context: ${contextData}
-
-List ONLY omissions that ALL competent journalists would include.
-
-Test ALL must be true:
-1. Standard for this beat/topic
-2. Available when article written
-3. Changes story interpretation significantly
-
-MISSING_CONTEXT: [only if passes test]
-OMISSION_SEVERITY: None/Low/Medium/High
-CONFIDENCE: High/Medium/Low
-ASSESSMENT: one sentence
-
-Default: No significant omissions
-
-TEXT:
-${textToSend}`;
-
-        omissionResponse = await state.currentSession.prompt(omissionPrompt);
-        console.log("--- OMISSION AGENT ---");
-        console.log(omissionResponse);
-        
-        console.log("Deep analysis agents complete.");
+      const fullText = articleContent.fullText || '';
+      const chunkSize = 3500; // Safely below the ~4000 char (1024 token) limit
+      const overlap = 500;   // Overlap chunks to maintain context
+      const chunks = [];
+      for (let i = 0; i < fullText.length; i += (chunkSize - overlap)) {
+        chunks.push(fullText.substring(i, i + chunkSize));
       }
+      console.log(`Article split into ${chunks.length} chunks.`);
 
-      // PHASE 3: Moderator - COMPLETELY REWRITTEN
-      console.log("Phase 3: Moderator synthesis...");
-      const moderatorPrompt = `You are the Moderator. Create final bias assessment.
+      // --- Run analysis agents on each chunk in parallel ---
+      const analysisPromises = chunks.map(async (chunk) => {
+        // We only need the core agents for chunk analysis
+        const contextPrompt = AgentPrompts.createContextPrompt(chunk);
+        const contextJSON = safeJSON(await session.prompt(contextPrompt), { type: 'Unknown' });
+        const contextData = `${contextJSON.type || 'Unknown'} chunk.`;
 
-CRITICAL RULES:
-1. If article type is Opinion/Analysis/Satire → Output: "OPINION/ANALYSIS CONTENT - Not evaluated for news bias"
-2. If Balance Score ≥8 → FORCE rating to Center regardless of other indicators
-3. Evidence scoring: High = 2 points, Medium = 1 point. Need 3+ points to move from Center.
-4. If ≥70% of loaded language is in QUOTES → treat as source bias, not article bias
-5. Default rating is CENTER unless overwhelming evidence
+        const languagePrompt = AgentPrompts.createLanguagePrompt(contextData, chunk);
+        const hunterPrompt = AgentPrompts.createHunterPrompt(contextData, chunk);
+        const skepticPrompt = AgentPrompts.createSkepticPrompt(contextData, chunk);
+        const quotePrompt = AgentPrompts.createQuotePrompt(contextData, chunk);
 
-Use EXACT format:
+        const [langRes, huntRes, skepRes, quoteRes] = await Promise.all([
+          session.prompt(languagePrompt),
+          session.prompt(hunterPrompt),
+          session.prompt(skepticPrompt),
+          session.prompt(quotePrompt)
+        ]);
 
-OVERALL BIAS ASSESSMENT
-Rating: [MUST be: Center/Lean Left/Lean Right/Left/Right/Unclear]
-Confidence: High/Medium/Low
+        return {
+          context: contextJSON,
+          language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
+          hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
+          skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' }),
+          quotes: safeJSON(quoteRes, { quotes: [], quotes_with_loaded_terms: 0, total_quotes: 0, confidence: 'High' })
+        };
+      });
 
-KEY FINDINGS
-- [2-4 factual observations about reporting, NOT quoted content]
+      const chunkAnalyses = await Promise.all(analysisPromises);
+      console.log(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
 
-LOADED LANGUAGE EXAMPLES
-- [ONLY list if found in narrative, not quotes. Format: "phrase" — reason, alternative]
+      // --- Synthesize the results from all chunks ---
+      console.log("--- Synthesizing Final Report ---");
+      const synthesizerPrompt = AgentPrompts.createSynthesizerPrompt(JSON.stringify(chunkAnalyses, null, 2));
+      const finalReportMarkdown = await session.prompt(synthesizerPrompt);
 
-BALANCED ELEMENTS
-- [1-3 genuine quality indicators]
+      // The final report is a simple object containing the markdown text
+      const analysisResult = { text: finalReportMarkdown };
 
-METHODOLOGY NOTE
-- Quotes excluded from bias analysis. Evidence threshold: 3+ points required.
+      await session.destroy();
 
-Evidence from agents:
-ARTICLE TYPE: ${articleType} (Is News: ${isNews})
-CONTEXT: ${contextData}
-
-LANGUAGE ANALYSIS:
-${languageResponse}
-
-BIAS INDICATORS:
-${hunterResponse}
-
-BALANCE ELEMENTS:
-${skepticResponse}
-
-${isDeepMode ? `DEEP ANALYSIS:
-Source: ${sourceDiversityResponse}
-Framing: ${framingResponse}
-Omissions: ${omissionResponse}` : ''}
-
-Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
-
-      // Skip on-device LLM moderator; use deterministic synthesis instead
-      console.log("--- MODERATOR (derived) ---");
-
-      // Parse agent responses to match cloud scan format
-      const contextJSON  = safeJSON(contextResponse,  {});
-      const languageJSON = safeJSON(languageResponse, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' });
-      const hunterJSON   = safeJSON(hunterResponse,   { bias_indicators: [], overall_bias: 'Center', confidence: 'High' });
-      const skepticJSON  = safeJSON(skepticResponse,  { balanced_elements: [], balance_score: 5, confidence: 'High' });
-      const quoteJSON    = safeJSON(quoteResponse,    { quotes: [], quotes_with_loaded_terms: 0, total_quotes: 0, confidence: 'High' });
-
-      // Build final markdown using on-device quick synthesis
-      let moderatorMarkdown = deriveQuickModeratorMarkdown(
-        contextJSON, languageJSON, hunterJSON, skepticJSON, quoteJSON
-      );
-      console.log(moderatorMarkdown);
-
-      // Structure result to match cloud scan format
-      const analysisResult = {
-        text: moderatorMarkdown,
-        languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
-        balancedElements: skepticJSON.balanced_elements || [],
-        biasIndicators: hunterJSON.bias_indicators || [],
-        quotes: quoteJSON.quotes || []
-      };
-
-      // Cleanup
-      if (state.currentSession) {
-        try { state.currentSession.destroy(); } catch {}
-        state.currentSession = null;
-      }
-      
       stopStatusUpdates();
       setView('default');
       state.isScanning = false;
       elements.scanButton.disabled = false;
 
-      await openResultsPage(analysisResult, 'on-device', articleContent);
-      
+      await saveAnalysisResults(analysisResult, 'on-device (chunked)', articleContent);
+
     } catch (error) {
-      console.error("Scan failed:", error);
-      setView('default');
-      stopStatusUpdates();
-      
+      console.error("On-device chunked scan failed:", error);
       if (state.currentSession) {
         try { state.currentSession.destroy(); } catch {}
-        state.currentSession = null;
       }
-      
+      setView('default');
+      stopStatusUpdates();
       state.isScanning = false;
       elements.scanButton.disabled = false;
-      showNotification("Scan failed. Check console.", 'error');
+      showNotification(`On-device scan failed: ${error.message}`, 'error');
     }
   }
-  
-  function scanWithCloudAI(articleContent) {
+
+  async function scanWithCloudAI(articleContent) {
     if (state.isScanning) {
       console.warn('[BiasNeutralizer] Scan already in progress');
       return;
@@ -857,11 +633,13 @@ Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
     console.log('[BiasNeutralizer] Sending scan request to background script');
     console.log('[BiasNeutralizer] Article content length:', articleContent.fullText?.length);
 
-    
+    // Get the active tab ID to pass to background
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tab?.id;
 
     try {
-      chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', articleContent: articleContent }, async (response) => {
-        
+      chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', tabId, articleContent: articleContent }, async (response) => {
+
 
         stopStatusUpdates();
         setView('default');
@@ -890,7 +668,7 @@ Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
           console.log('[BiasNeutralizer] Response type:', typeof response.results);
           console.log('[BiasNeutralizer] Response results:', response.results);
           console.log('[BiasNeutralizer] Response results length:', typeof response.results === 'string' ? response.results.length : 'N/A');
-          await openResultsPage(response.results, 'cloud', articleContent);
+          await saveAnalysisResults(response.results, 'cloud', articleContent);
         } else if (response.type === 'SCAN_ERROR') {
           console.error('[BiasNeutralizer] Background script error:', response.error);
           showError(
@@ -904,12 +682,12 @@ Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
       });
     } catch (error) {
       console.error('[BiasNeutralizer] Exception sending message:', error);
-      
+
       stopStatusUpdates();
       setView('default');
       state.isScanning = false;
       elements.scanButton.disabled = false;
-      
+
       showError('Failed to start analysis.', 'Please reload the extension and try again.');
     }
   }
@@ -1138,6 +916,25 @@ Keep under ${isDeepMode ? '350' : '250'} words. Be methodologically rigorous.`;
       if (target.closest('#settings-button')) {
         event.preventDefault();
         handleSettingsClick();
+        return;
+      }
+
+      if (target.closest('#view-results-button')) {
+        event.preventDefault();
+        if (!validateChromeAPI()) {
+          showError('Cannot open results page: Chrome APIs unavailable');
+          return;
+        }
+        chrome.tabs.create({ url: chrome.runtime.getURL('results/results.html') });
+        return;
+      }
+
+      if (target.closest('#close-modal-button')) {
+        event.preventDefault();
+        if (elements.resultsModalContainer) {
+          elements.resultsModalContainer.classList.remove('modal-visible');
+          elements.resultsModalContainer.classList.add('modal-hidden');
+        }
         return;
       }
     });

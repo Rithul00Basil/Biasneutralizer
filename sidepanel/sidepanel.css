@@ -1986,3 +1986,87 @@ body {
               0 0.25rem 0.5rem rgba(0, 0, 0, 0.2),
               inset 0 0.0625rem 0 rgba(255, 255, 255, 0.15);
 }
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.875rem 1.75rem;
+  font-family: var(--font-inter);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--text-white-90);
+  text-decoration: none;
+  background: transparent;
+}
+
+/* ===== Results Modal Styles ===== */
+#results-modal-container {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 200;
+  transition: opacity 0.3s ease;
+}
+
+.modal-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.modal-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.results-modal-content {
+  position: relative;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  transform: scale(0.95);
+  transition: transform 0.3s ease;
+}
+
+#results-modal-container.modal-visible .results-modal-content {
+  transform: scale(1);
+}
+
+.results-modal-content p {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-white-100);
+  margin: 0;
+}
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-white-80);
+  font-size: 1.5rem;
+  line-height: 30px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.close-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}

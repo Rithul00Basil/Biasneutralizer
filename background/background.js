@@ -1,4 +1,4 @@
-﻿/**
+/**
  * BiasNeutralizer Background Service Worker
  * Manages cloud-based AI analysis with multi-agent system
  */
@@ -72,7 +72,12 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const body = {
         contents: [{ role: 'user', parts: [{ text: prompt }]}],
-        generationConfig: { temperature: 0.2, topP: 0.8, maxOutputTokens: 2048 }
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.8,
+          maxOutputTokens: 30000,
+          response_mime_type: "application/json"
+        }
       };
 
       // Add thinkingConfig for supported models
@@ -130,7 +135,10 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
 // Listen for extension icon clicks and open side panel
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
+  if (!tab?.id) return;
+  chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
+    console.warn('[BiasNeutralizer] Failed to open side panel:', error);
+  });
 });
 
 // Main message listener for side panel communication
@@ -149,10 +157,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleScanRequest(message, sender, sendResponse) {
   console.log('[BiasNeutralizer] ===== SCAN REQUEST RECEIVED =====');
   console.log('[BiasNeutralizer] Message:', message);
-  
+
+  let tabId = null; // <-- hoist so catch/finally can see it
+
   try {
-    // Get the tab ID from the sender
-    const tabId = sender.tab?.id;
+    // Get the tab ID from the message or sender
+    tabId = message?.tabId ?? sender?.tab?.id;
+
+    if (!tabId) {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        tabId = tabs?.[0]?.id ?? null;
+      } catch (e) {
+        console.warn('[BiasNeutralizer] tabs.query failed:', e);
+      }
+    }
+
     if (!tabId) {
       console.warn('[BiasNeutralizer] No tab ID available, cannot track scan');
     }
@@ -224,10 +244,6 @@ async function handleScanRequest(message, sender, sendResponse) {
     console.log('[BiasNeutralizer] Result length:', typeof result === 'string' ? result.length : 'N/A');
     console.log('[BiasNeutralizer] Result value:', result);
 
-    if (tabId) {
-      activeScanControllers.delete(tabId);
-    }
-
     sendResponse({
       type: 'SCAN_COMPLETE',
       results: result
@@ -237,27 +253,17 @@ async function handleScanRequest(message, sender, sendResponse) {
 
   } catch (error) {
     console.error('[BiasNeutralizer] Scan failed:', error);
-    
-    let errorMessage = 'Analysis failed. Please try again.';
-    
-    if (error.name === 'AbortError') {
-      errorMessage = 'Analysis was cancelled.';
-    } else if (error.message.includes('API key')) {
-      errorMessage = 'Invalid API key. Please check your settings.';
-    } else if (error.message.includes('network') || error.message.includes('fetch')) {
-      errorMessage = 'Network error. Check your internet connection.';
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
 
-    sendResponse({
-      type: 'SCAN_ERROR',
-      error: errorMessage
-    });
-    
-    if (tabId) {
-      activeScanControllers.delete(tabId);
-    }
+    let errorMessage = 'Analysis failed. Please try again.';
+    if (error.name === 'AbortError') errorMessage = 'Analysis was cancelled.';
+    else if (error.message?.includes('API key')) errorMessage = 'Invalid API key. Please check your settings.';
+    else if (error.message?.includes('network') || error.message?.includes('fetch')) errorMessage = 'Network error. Check your internet connection.';
+    else if (error.message) errorMessage = error.message;
+
+    sendResponse({ type: 'SCAN_ERROR', error: errorMessage });
+  } finally {
+    // Centralized cleanup; safe even if already deleted
+    if (tabId) activeScanControllers.delete(tabId);
   }
 }
 
@@ -270,13 +276,96 @@ function handleCancelScan(sender) {
   }
 }
 
-function safeJSON(s, fallback) { 
-  try { 
-    return JSON.parse(s); 
-  } catch (error) { 
-    console.warn('[BiasNeutralizer] JSON parse failed:', error.message, 'Input:', typeof s === 'string' ? s.slice(0, 100) : s);
-    return fallback; 
-  } 
+function safeJSON(input, fallback = null) {
+  if (input == null) return fallback;
+
+  try {
+    if (typeof input === 'object') return input;
+
+    let s = String(input).trim().replace(/^\uFEFF/, '');
+
+    // Remove surrounding quotes that might wrap the entire response
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      s = s.slice(1, -1);
+    }
+
+    // Strip HTML <pre><code> wrappers if present
+    s = s
+      .replace(/^<pre[^>]*>\s*<code[^>]*>/i, '')
+      .replace(/<\/code>\s*<\/pre>$/i, '')
+      .trim();
+
+    // Fix malformed fences like '```'json or "```"json or ```'json
+    s = s.replace(/['"]*```['"]*(json|jsonc)?['"]*\s*/gi, '```$1\n');
+    s = s.replace(/['"]*```['"]*\s*$/gi, '```');
+
+    // Extract from fenced code blocks (```json ...```, ``` ...```, ~~~ ... ~~~)
+    const fence =
+      s.match(/```(?:json|jsonc)?\s*([\s\S]*?)\s*```/i) ||
+      s.match(/~~~(?:json|jsonc)?\s*([\s\S]*?)\s*~~~/i);
+    if (fence && fence[1]) s = fence[1].trim();
+
+    // Remove any remaining stray backticks or quotes at start/end
+    s = s.replace(/^[`'"]+|[`'"]+$/g, '');
+
+    // Helpers to allow JSONC-style comments & trailing commas
+    const stripComments = t =>
+      t.replace(/(^|[^:])\/\/.*$/gm, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
+    const stripTrailingCommas = t => t.replace(/,\s*([}\]])/g, '$1');
+
+    const tryParse = t => {
+      try { return JSON.parse(t); } catch { return undefined; }
+    };
+
+    // 1) Direct parse
+    let parsed = tryParse(s);
+    if (parsed !== undefined) return parsed;
+
+    // 2) Parse after cleaning comments/trailing commas
+    parsed = tryParse(stripTrailingCommas(stripComments(s)));
+    if (parsed !== undefined) return parsed;
+
+    // 3) Fallback: scan for first balanced {...} or [...]
+    const idx = s.search(/[\{\[]/);
+    if (idx !== -1) {
+      let stack = [], inStr = false, esc = false;
+      for (let i = idx; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === '\\') esc = true;
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') { inStr = true; continue; }
+        if (c === '{' || c === '[') stack.push(c);
+        else if (c === '}' || c === ']') {
+          if (!stack.length) break;
+          const open = stack[stack.length - 1];
+          if ((open === '{' && c === '}') || (open === '[' && c === ']')) {
+            stack.pop();
+            if (!stack.length) {
+              const candidate = s.slice(idx, i + 1);
+              parsed =
+                tryParse(candidate) ??
+                tryParse(stripTrailingCommas(stripComments(candidate)));
+              if (parsed !== undefined) return parsed;
+              break;
+            }
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    // Log the problematic input for debugging
+    console.error('[BiasNeutralizer] JSON parse failed. First 500 chars:', s.slice(0, 500));
+    
+  } catch (err) {
+    console.error('[BiasNeutralizer] JSON parse exception:', err.message);
+  }
+  return fallback;
 }
 
 async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal) {
@@ -291,7 +380,7 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   console.log('[BiasNeutralizer] Using thinking budget:', thinkingBudget);
 
-  const textToAnalyze = articleText.slice(0, 8000);
+  const textToAnalyze = articleText.slice(0, 500000);
 
   console.log('[BiasNeutralizer] Agent 1: Context analysis...');
   /*
@@ -638,10 +727,87 @@ TEXT:
     console.log('[BiasNeutralizer] Deep analysis agents complete');
   }
 
-  console.log('[BiasNeutralizer] Analysis agents complete');
+  console.log('[BiasNeutralizer] Phase 1: Initial Evidence Gathering complete');
 
-  console.log('[BiasNeutralizer] Agent 5: Moderator synthesis...');
+  // ==================== PHASE 2: CROSS-EXAMINATION & CHALLENGE ====================
+  console.log('[BiasNeutralizer] Phase 2: Tribunal Cross-Examination starting...');
+
+  // Agent 1: Prosecutor - Build the case for bias
+  console.log('[BiasNeutralizer] Agent 5: Prosecutor building case...');
+  const prosecutorPrompt = AgentPrompts.createProsecutorPrompt(
+    contextData,
+    languageJSON,
+    hunterJSON,
+    skepticJSON,
+    quoteJSON
+  );
+  const prosecutorResponse = await callGemini(apiKey, prosecutorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+  const prosecutorJSON = safeJSON(prosecutorResponse, { charges: [], prosecution_summary: 'No charges filed.', confidence: 'High' });
+  console.log('[BiasNeutralizer] Prosecutor complete. Charges filed:', prosecutorJSON.charges?.length || 0);
+
+  // Agent 2 & 3: Defense and Investigator run in parallel
+  console.log('[BiasNeutralizer] Agents 6-7: Defense and Investigator running in parallel...');
+  const defensePrompt = AgentPrompts.createDefensePrompt(
+    prosecutorJSON,
+    contextData,
+    languageJSON,
+    hunterJSON,
+    skepticJSON,
+    quoteJSON
+  );
+  const investigatorPrompt = AgentPrompts.createInvestigatorPrompt(
+    prosecutorJSON,
+    textToAnalyze
+  );
+
+  const [defenseResponse, investigatorResponse] = await Promise.all([
+    callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+  ]);
+
+  const defenseJSON = safeJSON(defenseResponse, { rebuttals: [], defense_summary: 'No rebuttals needed.', confidence: 'High' });
+  const investigatorJSON = safeJSON(investigatorResponse, { verified_facts: [], investigator_summary: 'No structural claims to investigate.', overall_confidence: 'High' });
+  
+  console.log('[BiasNeutralizer] Defense complete. Rebuttals filed:', defenseJSON.rebuttals?.length || 0);
+  console.log('[BiasNeutralizer] Investigator complete. Facts verified:', investigatorJSON.verified_facts?.length || 0);
+  console.log('[BiasNeutralizer] Phase 2: Cross-Examination complete');
+
+  // ==================== PHASE 3: JUDICIAL SYNTHESIS ====================
+  console.log('[BiasNeutralizer] Phase 3: Judge rendering final verdict...');
+  
+  // Agent 8: Judge - Final adjudication using tribunal debate
+  const judgePrompt = AgentPrompts.createJudgePrompt(
+    prosecutorJSON,
+    defenseJSON,
+    investigatorJSON,
+    contextData
+  );
+
+  const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
+  
+  console.log('[BiasNeutralizer] ===== JUDGE RESPONSE =====');
+  console.log('[BiasNeutralizer] Judge response type:', typeof judgeResponse);
+  console.log('[BiasNeutralizer] Judge response length:', typeof judgeResponse === 'string' ? judgeResponse.length : 'N/A');
+  console.log('[BiasNeutralizer] Judge response:', judgeResponse);
+  console.log('[BiasNeutralizer] Phase 3: Judicial Synthesis complete');
+  console.log('[BiasNeutralizer] Adversarial Tribunal Analysis complete');
+
+  return {
+    text: judgeResponse,
+    languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
+    balancedElements: skepticJSON.balanced_elements || [],
+    biasIndicators: hunterJSON.bias_indicators || [],
+    quotes: quoteJSON.quotes || [],
+    // Include tribunal metadata for potential UI enhancements
+    tribunalDebate: {
+      charges: prosecutorJSON.charges || [],
+      rebuttals: defenseJSON.rebuttals || [],
+      verifiedFacts: investigatorJSON.verified_facts || []
+    }
+  };
+
   /*
+  // OLD MODERATOR LOGIC (REPLACED BY TRIBUNAL)
   const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report. Enforce strict evidence thresholds and valid outputs.
 
 ALGORITHM (apply in order):
@@ -705,7 +871,7 @@ CRITICAL RULES:
 - Never rate Opinion/Analysis for news bias (use Unclear with the note).
 - NEVER treat statistics/data‑backed claims as loaded language.
 -- Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
-  */
+
   const moderatorPrompt = AgentPrompts.createModeratorPrompt(
     contextData,
     JSON.stringify(languageJSON),
@@ -731,6 +897,7 @@ CRITICAL RULES:
     biasIndicators: hunterJSON.bias_indicators || [],
     quotes: quoteJSON.quotes || []
   };
+  */
 }
 
 // callGeminiAPI removed; migrated to callGemini helper above

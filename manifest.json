@@ -3,6 +3,9 @@
   "name": "BiasNeutralizer",
   "version": "1.0.0",
   "description": "Detects media bias in real-time.",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com;"
+  },
   "options_page": "settings/settings.html",
   "action": {
     "default_title": "BiasNeutralizer"
@@ -17,7 +20,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "sidePanel"
+    "sidePanel",
+    "tabs"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*"

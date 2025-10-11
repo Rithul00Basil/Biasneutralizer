@@ -1,6 +1,33 @@
 (() => {
   'use strict';
 
+  async function loadAndRenderSummary(targetElement) {
+    const { lastSummary } = await storageGet(['lastSummary']);
+
+    if (!lastSummary || lastSummary.status === 'generating') {
+      targetElement.innerHTML = '<p class="placeholder-text">Generating on-device summary...</p>';
+      return;
+    }
+
+    if (lastSummary.status === 'error') {
+      targetElement.innerHTML = `<p class="placeholder-text error-text">Could not generate summary: ${lastSummary.data}</p>`;
+      return;
+    }
+
+    if (lastSummary.status === 'complete') {
+      const summaryMarkdown = lastSummary.data;
+      const keyPoints = summaryMarkdown.split('- ').filter(p => p.trim().length > 0);
+      const ul = document.createElement('ul');
+      keyPoints.forEach(pointText => {
+        const li = document.createElement('li');
+        li.textContent = pointText.trim();
+        ul.appendChild(li);
+      });
+      targetElement.innerHTML = '';
+      targetElement.appendChild(ul);
+    }
+  }
+
   const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
   const hasRuntime = typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getURL === 'function';
 
@@ -88,6 +115,8 @@
   }
 
   let lastRenderedTs = 0;
+  let conversationHistory = [];
+  let isFirstAssistantLoad = true;
 
   // legacy storage wrapper removed in favor of storageGet/storageSet
 
@@ -95,6 +124,7 @@
   document.addEventListener('DOMContentLoaded', async () => {
     cacheEls();
     bindEvents();
+    setupStorageListener(); // <- ADD THIS LINE
     await refreshResults();
   });
 
@@ -103,31 +133,85 @@
     els.domain = document.getElementById('article-domain');
     els.time = document.getElementById('analysis-time');
     els.source = document.getElementById('analysis-source');
-    els.keyFindings = document.getElementById('key-findings-content');
-    els.loadedLanguage = document.getElementById('loaded-language-content');
-    els.balancedElements = document.getElementById('balanced-elements-content');
-    els.openArticle = document.getElementById('open-article');
+    els.keyFindings = document.getElementById('findings-content');
+    els.loadedLanguage = document.getElementById('biased-languages-content');
+    els.balancedElements = document.getElementById('neutral-languages-content');
+    els.backToSidepanel = document.getElementById('back-to-sidepanel');
+    els.loadingState = document.getElementById('loading-state');
+    els.tribunalVerdictsCard = document.getElementById('tribunal-verdicts-card');
+    els.tribunalVerdictsContent = document.getElementById('tribunal-verdicts-content');
+    
     els.refresh = document.getElementById('refresh-results');
     els.openSidepanel = document.getElementById('open-sidepanel');
     els.onDeviceWarning = document.getElementById('on-device-warning');
+    els.assistantTrigger = document.getElementById('assistant-trigger');
+    els.assistantOverlay = document.getElementById('assistant-overlay');
+    els.assistantModal = document.getElementById('assistant-modal');
+    els.assistantCloseBtn = document.getElementById('assistant-close-btn');
+    els.assistantChatWindow = document.getElementById('assistant-chat-window');
+    els.assistantForm = document.getElementById('assistant-form');
+    els.assistantInput = document.getElementById('assistant-input');
+    els.promptStarterBtns = document.querySelectorAll('.prompt-starter-btn');
+    els.firstUseNotice = document.getElementById('assistant-first-use-notice');
   }
+
+// ADD THIS NEW FUNCTION:
+function setupStorageListener() {
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.lastAnalysis) {
+        console.log('[BiasNeutralizer Results] New analysis detected, refreshing...');
+        refreshResults();
+      }
+    });
+  }
+}
 
   function bindEvents() {
     els.refresh?.addEventListener('click', refreshResults);
     els.openSidepanel?.addEventListener('click', openSidePanel);
-    els.openArticle?.addEventListener('click', () => {
-      if (els.title && els.title.href && els.title.href !== '#') {
-        window.open(els.title.href, '_blank', 'noopener');
-      }
+    els.backToSidepanel?.addEventListener('click', () => {
+        // Navigate back to the sidepanel page
+        window.location.assign(chrome.runtime.getURL('sidepanel/sidepanel.html'));
+    });
+    
+    els.assistantTrigger?.addEventListener('click', openAssistant);
+    els.assistantCloseBtn?.addEventListener('click', closeAssistant);
+    els.assistantOverlay?.addEventListener('click', (e) => {
+        if (e.target === els.assistantOverlay) {
+            closeAssistant();
+        }
+    });
+    els.assistantForm?.addEventListener('submit', handleAssistantSubmit);
+    els.promptStarterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const prompt = btn.dataset.prompt;
+            if (prompt) {
+                openAssistant();
+                els.assistantInput.value = prompt;
+                handleAssistantSubmit(new Event('submit'));
+            }
+        });
     });
   }
 
   async function refreshResults() {
+    // Show loading state
+    if (els.loadingState) {
+      els.loadingState.classList.remove('hidden');
+    }
+    
     try {
       const { lastAnalysis } = await storageGet(['lastAnalysis']);
       console.log('[BiasNeutralizer Results] ===== LOADING ANALYSIS =====');
       console.log('[BiasNeutralizer Results] lastAnalysis:', lastAnalysis);
       console.log('[BiasNeutralizer Results] lastAnalysis type:', typeof lastAnalysis);
+      
+      // Hide loading state after data is loaded
+      if (els.loadingState) {
+        els.loadingState.classList.add('hidden');
+      }
+      
       if (!lastAnalysis || typeof lastAnalysis !== 'object') {
         console.warn('[BiasNeutralizer Results] No valid analysis found');
         renderEmpty();
@@ -141,6 +225,10 @@
       renderWhenVisible(() => render(lastAnalysis));
     } catch (e) {
       console.error('[BiasNeutralizer Results] Failed to load results:', e);
+      // Hide loading state on error
+      if (els.loadingState) {
+        els.loadingState.classList.add('hidden');
+      }
       renderEmpty();
     }
   }
@@ -154,7 +242,6 @@
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
     els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
-    els.openArticle.disabled = true;
     if (els.onDeviceWarning) {
       els.onDeviceWarning.classList.remove('visible');
     }
@@ -199,7 +286,7 @@
     // Parse and render the analysis into separate cards
     parseAndRenderAnalysis(md, raw);
 
-    // Show the Bias Hero section and update bias rating display
+    // Show the Bias Hero section and update bias rating display with animations
     const biasHeroEl = document.querySelector('.bias-hero');
     if (biasHeroEl) {
       biasHeroEl.classList.remove('initially-hidden');
@@ -207,9 +294,31 @@
     const extracted = extractBiasRating(md);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
-    if (ratingEl) ratingEl.textContent = extracted.rating;
+    const confidenceValueEl = document.getElementById('confidence-value');
+    const analysisTypeValueEl = document.getElementById('analysis-type-value');
+    
+    // Animate bias rating with fade in
+    if (ratingEl) {
+      ratingEl.style.opacity = '0';
+      ratingEl.textContent = extracted.rating;
+      setTimeout(() => {
+        ratingEl.style.transition = 'opacity 0.5s ease-in-out';
+        ratingEl.style.opacity = '1';
+      }, 100);
+    }
+    
     if (confidenceEl) confidenceEl.textContent = `Confidence: ${extracted.confidence}`;
-    els.openArticle.disabled = !url;
+    if (confidenceValueEl) confidenceValueEl.textContent = extracted.confidence || 'Medium';
+    if (analysisTypeValueEl) analysisTypeValueEl.textContent = source ? source.toUpperCase() : 'STANDARD';
+    
+    // Animate the rating progress ring
+    animateRatingRing(extracted.rating, extracted.confidence);
+
+    // Load the on-device summary from storage
+    loadAndRenderSummary(document.getElementById('summary-content'));
+
+    // Render tribunal verdicts if available
+    renderTribunalVerdicts(raw);
 
     // Show neutral on-device prompt only when it makes sense
     if (els.onDeviceWarning) {
@@ -247,12 +356,18 @@
   }
 
   function defaultSummaryFromRaw(raw) {
-    if (!raw) return 'Analysis complete.';
-    if (typeof raw === 'string') return raw;
-    if (raw && raw.analysis && typeof raw.analysis === 'string') return raw.analysis;
-    if (raw && raw.source) return `Analysis from the ${raw.source} model is complete.`;
-    return 'Analysis complete.';
+  if (!raw) return 'Analysis complete.';
+  if (typeof raw === 'string') return raw;
+  
+  // Fix: Check for raw.analysis.text (object with text field)
+  if (raw && raw.analysis) {
+    if (typeof raw.analysis === 'string') return raw.analysis;
+    if (typeof raw.analysis.text === 'string') return raw.analysis.text; // <- ADD THIS LINE
   }
+  
+  if (raw && raw.source) return `Analysis from the ${raw.source} model is complete.`;
+  return 'Analysis complete.';
+}
 
   function sanitizeAnalysisData(data) {
     const out = {};
@@ -337,32 +452,49 @@
 
   // Parse analysis text into sections and populate cards
   function parseAndRenderAnalysis(text, raw) {
-    const sections = parseAnalysisSections(text);
-    
-    // Store globally for other renderers
-    window.__analysisSections = sections;
-    window.__rawAnalysis = raw;
-    
-    // Populate Key Findings card
-    if (sections.keyFindings && sections.keyFindings.length > 0) {
-      renderBulletList(els.keyFindings, sections.keyFindings);
-    } else {
-      els.keyFindings.innerHTML = '<p class="placeholder-text">No data available</p>';
-    }
-    
-    // Populate Loaded Language card - prefer structured data from raw
-    renderLoadedFromRaw();
-    
-    // Populate Balanced Elements card
-    if (sections.balancedElements && sections.balancedElements.length > 0) {
-      renderBulletList(els.balancedElements, sections.balancedElements);
-    } else {
-      els.balancedElements.innerHTML = '<p class="placeholder-text">No data available</p>';
-    }
-    
-    // Populate Methodology Note
-    renderMethodology();
+  const sections = parseAnalysisSections(text);
+  
+  // Store globally for other renderers
+  window.__analysisSections = sections;
+  window.__rawAnalysis = raw;
+  
+  console.log('[Results] parseAndRenderAnalysis - sections:', sections);
+  console.log('[Results] parseAndRenderAnalysis - raw:', raw);
+  
+  // Populate Key Findings card - try structured data first
+  const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
+  
+  if (sections.keyFindings && sections.keyFindings.length > 0) {
+    renderBulletList(els.keyFindings, sections.keyFindings);
+  } else if (analysisData && analysisData.biasIndicators && analysisData.biasIndicators.length > 0) {
+    // Fallback to bias indicators from structured data
+    const findings = analysisData.biasIndicators.map(ind => 
+      `${ind.type}: ${ind.explanation || ind.example}`
+    );
+    renderBulletList(els.keyFindings, findings);
+  } else {
+    els.keyFindings.innerHTML = '<p class="placeholder-text">No significant bias indicators found</p>';
   }
+  
+  // Populate Loaded Language card - prefer structured data from raw
+  renderLoadedFromRaw();
+  
+  // Populate Balanced Elements card - try structured data first
+  if (sections.balancedElements && sections.balancedElements.length > 0) {
+    renderBulletList(els.balancedElements, sections.balancedElements);
+  } else if (analysisData && analysisData.balancedElements && analysisData.balancedElements.length > 0) {
+    // Fallback to structured data
+    const elements = analysisData.balancedElements.map(el => 
+      `${el.type}: ${el.explanation}`
+    );
+    renderBulletList(els.balancedElements, elements);
+  } else {
+    els.balancedElements.innerHTML = '<p class="placeholder-text">No notable balanced elements identified</p>';
+  }
+  
+  // Populate Methodology Note
+  renderMethodology();
+}
   
   // Render Methodology dynamically
   function renderMethodology() {
@@ -385,39 +517,58 @@
   
   // Render Loaded Language from structured data when available
   function renderLoadedFromRaw() {
-    const raw = window.__rawAnalysis;
-    const sections = window.__analysisSections || {};
+  const raw = window.__rawAnalysis;
+  const sections = window.__analysisSections || {};
+  
+  console.log('[Results] renderLoadedFromRaw - raw:', raw);
+  console.log('[Results] renderLoadedFromRaw - sections:', sections);
+  
+  // Check multiple possible locations for language analysis data
+  const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
+  
+  // Try structured data first
+  if (analysisData && Array.isArray(analysisData.languageAnalysis) && analysisData.languageAnalysis.length > 0) {
+    const items = analysisData.languageAnalysis;
+    els.loadedLanguage.innerHTML = '';
     
-    // Try structured data first
-    if (raw && raw.analysis && Array.isArray(raw.analysis.languageAnalysis) && raw.analysis.languageAnalysis.length > 0) {
-      const items = raw.analysis.languageAnalysis;
-      els.loadedLanguage.innerHTML = '';
-      items.slice(0, 8).forEach(x => {
-        const exampleDiv = document.createElement('div');
-        exampleDiv.className = 'language-example';
-        
-        const phrase = typeof x === 'string' ? x : (x.phrase || JSON.stringify(x));
-        const phraseDiv = document.createElement('div');
-        phraseDiv.className = 'language-phrase';
-        phraseDiv.textContent = `"${phrase}"`;
-        exampleDiv.appendChild(phraseDiv);
-        
-        if (x.explanation) {
-          const explanationDiv = document.createElement('div');
-          explanationDiv.className = 'language-explanation';
-          explanationDiv.textContent = x.explanation;
-          exampleDiv.appendChild(explanationDiv);
-        }
-        
-        els.loadedLanguage.appendChild(exampleDiv);
-      });
-    } else if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
-      // Fall back to parsed text sections
-      renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
-    } else {
-      els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
-    }
+    items.slice(0, 8).forEach(x => {
+      const exampleDiv = document.createElement('div');
+      exampleDiv.className = 'language-example';
+      
+      const phrase = typeof x === 'string' ? x : (x.phrase || JSON.stringify(x));
+      const phraseDiv = document.createElement('div');
+      phraseDiv.className = 'language-phrase';
+      phraseDiv.textContent = `"${phrase}"`;
+      exampleDiv.appendChild(phraseDiv);
+      
+      if (x.explanation) {
+        const explanationDiv = document.createElement('div');
+        explanationDiv.className = 'language-explanation';
+        explanationDiv.textContent = x.explanation;
+        exampleDiv.appendChild(explanationDiv);
+      }
+      
+      if (x.neutral_alternative) {
+        const altDiv = document.createElement('div');
+        altDiv.className = 'language-alternative';
+        altDiv.textContent = `Alternative: "${x.neutral_alternative}"`;
+        exampleDiv.appendChild(altDiv);
+      }
+      
+      els.loadedLanguage.appendChild(exampleDiv);
+    });
+    return;
   }
+  
+  // Try parsing from text sections
+  if (sections.loadedLanguage && sections.loadedLanguage.length > 0) {
+    renderLoadedLanguageExamples(els.loadedLanguage, sections.loadedLanguage, raw);
+    return;
+  }
+  
+  // Final fallback
+  els.loadedLanguage.innerHTML = '<p class="placeholder-text">No significant biased language detected in the narrative</p>';
+}
 
   // Parse the analysis text into structured sections
   function parseAnalysisSections(text) {
@@ -561,5 +712,443 @@
     });
   }
 
+  // Render Tribunal Verdicts card
+  function renderTribunalVerdicts(raw) {
+    if (!els.tribunalVerdictsCard || !els.tribunalVerdictsContent) return;
+    
+    // Check if tribunal data exists
+    if (!raw || !raw.tribunalDebate || !raw.tribunalDebate.charges || raw.tribunalDebate.charges.length === 0) {
+      els.tribunalVerdictsCard.style.display = 'none';
+      return;
+    }
+    
+    // Show the card
+    els.tribunalVerdictsCard.style.display = 'block';
+    
+    const { charges, rebuttals, verifiedFacts } = raw.tribunalDebate;
+    
+    els.tribunalVerdictsContent.innerHTML = '';
+    
+    // If no charges were filed
+    if (charges.length === 0) {
+      const noChargesP = document.createElement('p');
+      noChargesP.className = 'tribunal-section-content';
+      noChargesP.textContent = 'No charges were filed. The Prosecutor determined there was insufficient evidence to prosecute for bias.';
+      els.tribunalVerdictsContent.appendChild(noChargesP);
+      return;
+    }
+    
+    // Render each charge with its debate
+    charges.forEach((charge, index) => {
+      const chargeDiv = document.createElement('div');
+      chargeDiv.className = 'tribunal-charge';
+      
+      // Charge Header
+      const chargeHeader = document.createElement('div');
+      chargeHeader.className = 'charge-header';
+      
+      const chargeTitle = document.createElement('h3');
+      chargeTitle.className = 'charge-title';
+      chargeTitle.textContent = `Charge ${index + 1}`;
+      chargeHeader.appendChild(chargeTitle);
+      
+      if (charge.severity) {
+        const severityBadge = document.createElement('span');
+        severityBadge.className = `charge-severity ${charge.severity.toLowerCase()}`;
+        severityBadge.textContent = charge.severity;
+        chargeHeader.appendChild(severityBadge);
+      }
+      
+      chargeDiv.appendChild(chargeHeader);
+      
+      // Charge Claim
+      if (charge.claim) {
+        const chargeClaim = document.createElement('p');
+        chargeClaim.className = 'charge-claim';
+        chargeClaim.textContent = charge.claim;
+        chargeDiv.appendChild(chargeClaim);
+      }
+      
+      // Prosecutor's Evidence
+      if (charge.supporting_evidence && charge.supporting_evidence.length > 0) {
+        const prosecutorSection = document.createElement('div');
+        prosecutorSection.className = 'tribunal-section';
+        
+        const prosecutorTitle = document.createElement('div');
+        prosecutorTitle.className = 'tribunal-section-title';
+        prosecutorTitle.textContent = '⚡ Prosecutor\'s Evidence';
+        prosecutorSection.appendChild(prosecutorTitle);
+        
+        const evidenceList = document.createElement('ul');
+        evidenceList.className = 'tribunal-section-content';
+        charge.supporting_evidence.forEach(evidence => {
+          const li = document.createElement('li');
+          li.textContent = evidence;
+          evidenceList.appendChild(li);
+        });
+        prosecutorSection.appendChild(evidenceList);
+        
+        chargeDiv.appendChild(prosecutorSection);
+      }
+      
+      // Defense's Rebuttal
+      const rebuttal = rebuttals && rebuttals.find(r => r.charge_id === charge.charge_id);
+      if (rebuttal) {
+        const defenseSection = document.createElement('div');
+        defenseSection.className = 'tribunal-section';
+        
+        const defenseTitle = document.createElement('div');
+        defenseTitle.className = 'tribunal-section-title';
+        defenseTitle.textContent = '🛡️ Defense\'s Rebuttal';
+        defenseSection.appendChild(defenseTitle);
+        
+        const rebuttalContent = document.createElement('p');
+        rebuttalContent.className = 'tribunal-section-content';
+        rebuttalContent.textContent = rebuttal.counter_argument;
+        defenseSection.appendChild(rebuttalContent);
+        
+        if (rebuttal.mitigating_evidence && rebuttal.mitigating_evidence.length > 0) {
+          const mitigatingList = document.createElement('ul');
+          mitigatingList.className = 'tribunal-section-content';
+          rebuttal.mitigating_evidence.forEach(evidence => {
+            const li = document.createElement('li');
+            li.textContent = evidence;
+            mitigatingList.appendChild(li);
+          });
+          defenseSection.appendChild(mitigatingList);
+        }
+        
+        chargeDiv.appendChild(defenseSection);
+      }
+      
+      // Investigator's Facts
+      const facts = verifiedFacts && verifiedFacts.find(f => f.charge_id === charge.charge_id);
+      if (facts && facts.findings) {
+        const investigatorSection = document.createElement('div');
+        investigatorSection.className = 'tribunal-section';
+        
+        const investigatorTitle = document.createElement('div');
+        investigatorTitle.className = 'tribunal-section-title';
+        investigatorTitle.textContent = '🔬 Investigator\'s Facts';
+        investigatorSection.appendChild(investigatorTitle);
+        
+        const factsContent = document.createElement('p');
+        factsContent.className = 'tribunal-section-content';
+        
+        // Create a readable summary of the findings
+        let factsSummary = '';
+        if (facts.investigation_type) {
+          factsSummary += `<strong>${facts.investigation_type}:</strong> `;
+        }
+        if (facts.findings.verdict) {
+          factsSummary += facts.findings.verdict;
+        } else {
+          factsSummary += JSON.stringify(facts.findings);
+        }
+        
+        factsContent.innerHTML = factsSummary;
+        investigatorSection.appendChild(factsContent);
+        
+        // Add verdict badge if available
+        if (rebuttal && rebuttal.recommended_verdict) {
+          const verdictBadge = document.createElement('div');
+          const verdictClass = rebuttal.recommended_verdict.toLowerCase().includes('dismiss') ? 'dismissed' :
+                               rebuttal.recommended_verdict.toLowerCase().includes('sustain') ? 'sustained' :
+                               'inconclusive';
+          verdictBadge.className = `verdict-badge ${verdictClass}`;
+          verdictBadge.textContent = rebuttal.recommended_verdict;
+          investigatorSection.appendChild(verdictBadge);
+        }
+        
+        chargeDiv.appendChild(investigatorSection);
+      }
+      
+      els.tribunalVerdictsContent.appendChild(chargeDiv);
+    });
+  }
+
   // legacy text renderer removed
+  function openAssistant() {
+    if (!els.assistantOverlay || !els.firstUseNotice) return;
+
+    if (isFirstAssistantLoad) {
+      els.firstUseNotice.style.display = 'block';
+      isFirstAssistantLoad = false;
+    }
+
+    els.assistantOverlay.style.display = 'flex';
+    setTimeout(() => {
+        els.assistantOverlay.classList.add('visible');
+        els.assistantInput.focus();
+    }, 10);
+  }
+
+function closeAssistant() {
+    if (!els.assistantOverlay) return;
+    els.assistantOverlay.classList.remove('visible');
+    setTimeout(() => {
+        els.assistantOverlay.style.display = 'none';
+    }, 300);
+}
+
+function addMessageToChat(role, content) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `assistant-message ${role}`;
+    // Sanitize content to prevent XSS attacks
+    const sanitizedContent = DOMPurify.sanitize(content, {
+        ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
+        ALLOWED_ATTR: []
+    });
+    messageDiv.innerHTML = sanitizedContent;
+    els.assistantChatWindow.appendChild(messageDiv);
+    els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
+    return messageDiv;
+}
+
+async function handleAssistantSubmit(event) {
+    event.preventDefault();
+    const userInput = els.assistantInput.value.trim();
+    if (!userInput) return;
+
+    addMessageToChat('user', userInput);
+    conversationHistory.push({ role: 'user', parts: [{ text: userInput }] });
+    els.assistantInput.value = '';
+    els.assistantInput.disabled = true;
+
+    const typingIndicator = addMessageToChat('assistant typing-indicator', '<span></span><span></span><span></span>');
+
+    try {
+        await streamAssistantResponse(userInput, typingIndicator);
+    } catch (error) {
+        console.error("Assistant Error:", error);
+        typingIndicator.textContent = "Sorry, I encountered an error. Please try again.";
+    } finally {
+        els.assistantInput.disabled = false;
+        els.assistantInput.focus();
+    }
+}
+
+async function handleOnDeviceAssistant(userInput, messageElement) {
+    try {
+        const availability = await window.LanguageModel.availability();
+        if (availability !== 'available') {
+            throw new Error(`On-device model not available. Status: ${availability}`);
+        }
+
+        const session = await window.LanguageModel.create();
+        const { lastAnalysis } = await storageGet(['lastAnalysis']);
+        const analysisContext = JSON.stringify(lastAnalysis, null, 2);
+
+        const systemPrompt = `You are a helpful assistant for the BiasNeutralizer app. Your answers MUST be based *only* on the JSON analysis data provided below. Do not invent information. If the user asks something not in the context, say so.
+
+        ANALYSIS CONTEXT:
+        ${analysisContext}`;
+
+        const fullPrompt = `${systemPrompt}\n\n--- Conversation History ---\n${conversationHistory
+            .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts[0].text}`)
+            .join('\n')}\nUser: ${userInput}\nAssistant:`;
+
+        const responseText = await session.prompt(fullPrompt);
+        await session.destroy();
+
+        messageElement.classList.remove('typing-indicator');
+        const formattedHtml = responseText
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>');
+        messageElement.innerHTML = DOMPurify.sanitize(formattedHtml, { ALLOWED_TAGS: ['strong', 'em', 'p', 'br'] });
+
+        conversationHistory.push({ role: 'model', parts: [{ text: responseText }] });
+
+    } catch (error) {
+        console.error("On-device assistant error:", error);
+        messageElement.classList.remove('typing-indicator');
+        messageElement.textContent = `Sorry, the on-device assistant failed: ${error.message}`;
+    }
+}
+
+async function streamAssistantResponse(userInput, messageElement) {
+    const settings = await storageGet(['lastAnalysis', 'geminiApiKey', 'assistantModel']);
+    const { lastAnalysis, geminiApiKey } = settings;
+    const assistantModel = settings.assistantModel || 'on-device';
+
+    if (assistantModel === 'cloud' && !geminiApiKey) {
+        messageElement.textContent = "Error: Gemini API key not found in settings.";
+        return;
+    }
+
+    const analysisContext = JSON.stringify(lastAnalysis, null, 2);
+
+    if (assistantModel === 'on-device') {
+        // Call the new on-device handler function we just created
+        await handleOnDeviceAssistant(userInput, messageElement);
+        return; // Exit the function here
+    }
+
+    const systemPrompt = `You are the BiasNeutralizer Analysis Assistant. Your purpose is to explain the provided news analysis clearly, neutrally, and concisely.
+    - You MUST base your answers strictly on the JSON context provided below. Do not invent information.
+    - If the user asks a question that cannot be answered by the context, politely state that.
+    - Format your response using simple markdown (bold, italics, lists).
+
+    ANALYSIS CONTEXT:
+    ${analysisContext}`;
+
+    const model = 'gemini-1.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}&alt=sse`;
+
+    // Add system prompt and current history to the request
+    const requestBody = {
+        contents: [
+            ...conversationHistory
+        ],
+        systemInstruction: {
+            parts: [{ text: systemPrompt }]
+        }
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+    }
+
+    messageElement.classList.remove('typing-indicator');
+    messageElement.textContent = '';
+    let fullResponseText = '';
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const jsonStr = line.substring(6);
+                    const data = JSON.parse(jsonStr);
+                    const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (textPart) {
+                        fullResponseText += textPart;
+                        // Convert markdown to HTML with proper escaping
+                        const markdownToHtml = (text) => {
+                            let html = text
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                .replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>')
+                                .replace(/<\/ul>(\s*)<ul>/g, '$1');
+                            return html;
+                        };
+                        const dirtyHtml = markdownToHtml(fullResponseText);
+                        // Sanitize to prevent XSS attacks
+                        messageElement.innerHTML = DOMPurify.sanitize(dirtyHtml, {
+                            ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
+                            ALLOWED_ATTR: []
+                        });
+                        els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
+                    }
+                } catch (e) {
+                    // Ignore parsing errors for incomplete chunks
+                }
+            }
+        }
+    }
+    conversationHistory.push({ role: 'model', parts: [{ text: fullResponseText }] });
+}
+
+// ====================================================================
+// Premium Animation Functions
+// ====================================================================
+
+function animateRatingRing(rating, confidence) {
+  const progressCircle = document.getElementById('rating-progress');
+  if (!progressCircle) return;
+  
+  // Map rating to percentage (0-100)
+  const ratingMap = {
+    'Center': 50,
+    'Lean Left': 35,
+    'Lean Right': 65,
+    'Strong Left': 15,
+    'Strong Right': 85,
+    'Left': 25,
+    'Right': 75,
+    'Unknown': 50,
+    'Unclear': 50
+  };
+  
+  const confidenceMultiplier = {
+    'High': 1,
+    'Medium': 0.8,
+    'Low': 0.6
+  };
+  
+  let targetPercent = ratingMap[rating] || 50;
+  const mult = confidenceMultiplier[confidence] || 0.8;
+  
+  // Calculate stroke dash offset (circumference = 2 * π * r = 2 * π * 54 ≈ 339.292)
+  const circumference = 339.292;
+  const offset = circumference - (targetPercent / 100) * circumference;
+  
+  // Animate with delay
+  setTimeout(() => {
+    if (progressCircle) {
+      progressCircle.style.strokeDashoffset = offset;
+      // Add dynamic color based on rating
+      const colorMap = {
+        'Center': '#10B981',
+        'Lean Left': '#3B82F6',
+        'Lean Right': '#3B82F6',
+        'Strong Left': '#8B5CF6',
+        'Strong Right': '#8B5CF6',
+        'Left': '#3B82F6',
+        'Right': '#3B82F6'
+      };
+      progressCircle.style.stroke = colorMap[rating] || '#F97316';
+    }
+  }, 300);
+}
+
+// Add scroll reveal animations
+function initScrollAnimations() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+  });
+  
+  document.querySelectorAll('.analysis-card, .report-header').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(el);
+  });
+}
+
+// Initialize animations when DOM is loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initScrollAnimations);
+} else {
+  initScrollAnimations();
+}
+
+// Add smooth scroll behavior
+document.documentElement.style.scrollBehavior = 'smooth';
+
 })();
