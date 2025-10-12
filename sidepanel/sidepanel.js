@@ -1,25 +1,55 @@
-/**
+﻿/**
  * BiasNeutralizer Side Panel Controller
  * Manages article scanning, AI analysis, and user interactions
  */
 import { AgentPrompts } from '../shared/prompts.js';
 document.addEventListener('DOMContentLoaded', () => {
   // === sidepanel rating validation + model label helpers ===
-  function normalizeModeratorSections(markdown) {
+   function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
-    markdown = String(markdown).replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
+    let out = String(markdown || '');
+    out = out.replace(/\[RATING\]\s*:/gi,'Rating:').replace(/\[CONFIDENCE\]\s*:/gi,'Confidence:');
+    
+    out = out.replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
       let r = String(p2 || '').trim();
       const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
       r = map[r] || r;
       if (!allowed.has(r)) r = 'Unclear';
       return p1 + r;
     });
-    markdown = markdown.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
+    
+    out = out.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
       let c = String(p2 || '').trim();
       if (!['High','Medium','Low'].includes(c)) c = 'Medium';
       return p1 + c;
     });
-    return markdown;
+    
+    if (!/^\s*##\s*Overall Bias Assessment/im.test(out)) {
+      out = '## Overall Bias Assessment\n' + out;
+    }
+    
+    // CRITICAL FIX: If no Rating: line exists, extract from bullet format
+    if (!/^\s*Rating:/im.test(out)) {
+      const m = out.match(/Overall Bias Assessment\**\s*:\s*([^\n]+)/i);
+      if (m && m[1]) {
+        let r = m[1].trim();
+        const map = { 
+          'Unknown':'Unclear',
+          'Centrist':'Center',
+          'Neutral':'Center',
+          'Centre':'Center',
+          'Left':'Lean Left',
+          'Right':'Lean Right' 
+        };
+        r = map[r] || r;
+        if (!allowed.has(r)) r = 'Unclear';
+        out = out.replace(/(##\s*Overall Bias Assessment[^\n]*\n?)/i, `$1Rating: ${r}\n`);
+      } else {
+        out += '\nRating: Unclear';
+      }
+    }
+    
+    return out;
   }
 
   function getModelNameForDepth(depth) {
@@ -499,14 +529,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const summarizer = await Summarizer.create({
-        type: 'key-points',
-        format: 'markdown',
-        length: 'long' // Ask for a long, detailed summary
-      });
+  type: 'key-points',
+  format: 'markdown',
+  length: 'short' // Changed from 'long' to 'short' for speed
+});
 
-      const summaryMarkdown = await summarizer.summarize(articleContent.fullText, {
-        context: 'Generate detailed, standalone key points for a news article analysis. Each point should be a complete sentence or two.'
-      });
+      const summaryMarkdown = await summarizer.summarize(
+  articleContent.fullText.slice(0, 6000),  // Only first 6k chars for speed
+  {
+    context: 'Generate concise key points for a news article. 3-5 bullet points maximum.'
+  }
+);
 
       // Save the successful summary
       await safeStorageSet({ lastSummary: { status: 'complete', data: summaryMarkdown } });
@@ -825,6 +858,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /**
+   * Opens help page
+   */
+  function handleHelpClick() {
+    console.log('[BiasNeutralizer] Opening help page');
+    
+    // Navigate to the help page
+    window.location.href = '../help/help.html';
+  }
+
   // ========================================
   // INITIALIZATION
   // ========================================
@@ -917,6 +960,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (target.closest('#settings-button')) {
         event.preventDefault();
         handleSettingsClick();
+        return;
+      }
+
+      // Help button
+      if (target.closest('#help-button')) {
+        event.preventDefault();
+        handleHelpClick();
         return;
       }
 

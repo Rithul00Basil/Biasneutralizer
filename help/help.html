@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BiasNeutralizer Help</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+  <div class="panel-container help-container">
+    <div class="help-top-row">
+      <button class="back-link" type="button" id="back-button">
+        <span class="back-icon">←</span>
+        <span>Back</span>
+      </button>
+      <div class="help-title">
+        <h1 class="product-name">
+          <span class="bias">Bias</span><span class="neutralizer">Neutralizer</span>
+        </h1>
+        <p class="subtitle">Your guide to understanding bias analysis</p>
+      </div>
+      <div class="header-icon">
+        <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
+      </div>
+    </div>
+
+    <!-- TL;DR Banner -->
+    <div class="tldr-banner">
+      <span class="tldr-label">TL;DR</span>
+      <div class="tldr-steps">
+        <span class="tldr-step">Scan</span>
+        <span class="tldr-arrow">→</span>
+        <span class="tldr-step">Read highlights</span>
+        <span class="tldr-arrow">→</span>
+        <span class="tldr-step">See verdict</span>
+      </div>
+    </div>
+
+    <!-- Quick Navigation Anchors -->
+    <div class="quick-nav">
+      <span class="quick-nav-label">Skip to:</span>
+      <a href="#quick-start" class="quick-nav-link">Quick Start</a>
+      <a href="#troubleshooting" class="quick-nav-link">Troubleshoot</a>
+      <a href="#ratings" class="quick-nav-link">Rating</a>
+      <a href="#privacy" class="quick-nav-link">Privacy</a>
+      <a href="#faq" class="quick-nav-link">FAQ</a>
+    </div>
+
+    <div class="help-content">
+      <!-- Section 1: Quick Start (OPEN BY DEFAULT) -->
+      <details class="help-section" id="quick-start" open>
+        <summary class="section-header">
+          <span class="section-icon">🚀</span>
+          <h2 class="section-title">Quick Start — Essentials (2 min)</h2>
+          <span class="expand-indicator">▼</span>
+        </summary>
+        <div class="section-content">
+          <h3>Run your first scan</h3>
+          <ol class="help-list">
+            <li>Open a news article</li>
+            <li>Click the BiasNeutralizer extension icon</li>
+            <li>Tap <strong>"Scan Article"</strong></li>
+            <li>Wait 10-30 seconds</li>
+            <li>Review highlights and verdict</li>
+          </ol>
+
+          <h3>Read the highlights</h3>
+          <div class="visual-key-compact">
+            <div class="key-compact">
+              <span class="highlight-example highlight-biased">Orange = Biased</span>
+              <span class="highlight-example highlight-neutral">Green = Neutral</span>
+            </div>
+          </div>
+          <ul class="help-list">
+            <li>Click any highlight for details</li>
+            <li><strong>Neutralize:</strong> See neutral alternative</li>
+            <li><strong>Know more:</strong> Understand why it was flagged</li>
+          </ul>
+
+          <details class="deep-dive-section">
+            <summary class="deep-dive-toggle">
+              <span class="toggle-icon">+</span>
+              <span class="toggle-text">Deep Dive: How the analysis works</span>
+            </summary>
+            <div class="deep-dive-content">
+              <h4>Multi-agent verification</h4>
+              <p>Deep scans use three specialized AI agents:</p>
+              <div class="agent-role-compact">
+                <span class="role-icon">🔍</span>
+                <strong>Bias Hunter:</strong> Finds loaded language and framing issues
+              </div>
+              <div class="agent-role-compact">
+                <span class="role-icon">🛡️</span>
+                <strong>Skeptic:</strong> Challenges claims and finds balanced elements
+              </div>
+              <div class="agent-role-compact">
+                <span class="role-icon">⚖️</span>
+                <strong>Moderator:</strong> Weighs evidence and delivers final verdict
+              </div>
+              <p class="deep-note">This adversarial approach ensures thorough, multi-perspective analysis.</p>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <!-- Section 2: Troubleshooting (Blockers Up Front) -->
+      <details class="help-section" id="troubleshooting">
+        <summary class="section-header">
+          <span class="section-icon">🔧</span>
+          <h2 class="section-title">Troubleshooting — Fix common issues</h2>
+          <span class="expand-indicator">▼</span>
+        </summary>
+        <div class="section-content">
+          <h3>On-device AI not working?</h3>
+          <ul class="help-list checklist">
+            <li>Check Chrome version (need 127+)</li>
+            <li>Enable at <code>chrome://flags/#prompt-api-for-gemini-nano</code></li>
+            <li>Wait for model download (~1.7GB, takes 10-30 min)</li>
+            <li>Restart Chrome after enabling</li>
+            <li>Ensure 2GB+ free disk space</li>
+          </ul>
+
+          <h3>Why is my scan slow?</h3>
+          <ul class="help-list">
+            <li><strong>Cloud mode:</strong> Network latency adds 10-20 seconds</li>
+            <li><strong>Deep analysis:</strong> Runs extra checks (worth the wait)</li>
+            <li><strong>Long articles:</strong> More content = more processing time</li>
+            <li><strong>Rate limits:</strong> Too many scans may throttle API</li>
+          </ul>
+          <p class="tip-note"><strong>Tip:</strong> Use On-Device mode for fastest results (5-15s).</p>
+        </div>
+      </details>
+
+      <!-- Section 3: What the bias rating means -->
+      <details class="help-section" id="ratings">
+        <summary class="section-header">
+          <span class="section-icon">📊</span>
+          <h2 class="section-title">What the bias rating means</h2>
+          <span class="expand-indicator">▼</span>
+        </summary>
+        <div class="section-content">
+          <p class="outcome-promise">You'll understand how we calculate ratings and what each one means.</p>
+          
+          <h3>How ratings work</h3>
+          <p class="explainer-text">We analyze the <strong>language patterns</strong> in how a story is told, not the facts or your political views. Think of it like a grammar checker, but for bias instead of spelling.</p>
+          
+          <div class="methodology-box">
+            <h4>Our 3-factor scoring system</h4>
+            <ol class="help-list">
+              <li><strong>Loaded language count:</strong> Emotional or charged words</li>
+              <li><strong>Structural framing:</strong> How information is organized and emphasized</li>
+              <li><strong>Balance score:</strong> Whether multiple perspectives are included</li>
+            </ol>
+            <p class="methodology-note">These combine into evidence points that determine the final rating.</p>
+          </div>
+
+          <h3>The 6 ratings explained</h3>
+          <div class="rating-legend">
+            <div class="rating-item-compact rating-strong-left">
+              <div class="rating-header">
+                <strong>Strong Left</strong>
+                <span class="rating-threshold">4+ evidence points</span>
+              </div>
+              <p class="rating-desc">Multiple loaded phrases favoring progressive perspectives, limited conservative viewpoints</p>
+              <p class="rating-example-inline"><strong>Example:</strong> "Republicans <em>gutted</em> healthcare protections" vs. "reduced"</p>
+            </div>
+            <div class="rating-item-compact rating-lean-left">
+              <div class="rating-header">
+                <strong>Lean Left</strong>
+                <span class="rating-threshold">2-3 evidence points</span>
+              </div>
+              <p class="rating-desc">Moderate use of left-leaning framing or language patterns</p>
+              <p class="rating-example-inline"><strong>Example:</strong> "Climate crisis" vs. "climate change" (when repeated)</p>
+            </div>
+            <div class="rating-item-compact rating-center">
+              <div class="rating-header">
+                <strong>Center</strong>
+                <span class="rating-threshold">0-1 evidence points</span>
+              </div>
+              <p class="rating-desc">Neutral language with balanced sourcing and minimal emotional framing</p>
+              <p class="rating-example-inline"><strong>Example:</strong> "Lawmakers criticized" vs. "slammed" or "praised"</p>
+            </div>
+            <div class="rating-item-compact rating-lean-right">
+              <div class="rating-header">
+                <strong>Lean Right</strong>
+                <span class="rating-threshold">2-3 evidence points</span>
+              </div>
+              <p class="rating-desc">Moderate use of right-leaning framing or language patterns</p>
+              <p class="rating-example-inline"><strong>Example:</strong> "Tax relief" vs. "tax cuts" (when benefits emphasized)</p>
+            </div>
+            <div class="rating-item-compact rating-strong-right">
+              <div class="rating-header">
+                <strong>Strong Right</strong>
+                <span class="rating-threshold">4+ evidence points</span>
+              </div>
+              <p class="rating-desc">Multiple loaded phrases favoring conservative perspectives, limited progressive viewpoints</p>
+              <p class="rating-example-inline"><strong>Example:</strong> "Democrats <em>hijacked</em> the bill" vs. "amended"</p>
+            </div>
+            <div class="rating-item-compact rating-unclear">
+              <div class="rating-header">
+                <strong>Unclear</strong>
+                <span class="rating-threshold">Mixed signals</span>
+              </div>
+              <p class="rating-desc">Conflicting evidence or insufficient content to determine clear direction</p>
+              <p class="rating-example-inline"><strong>Example:</strong> Opinion pieces or very short articles</p>
+            </div>
+          </div>
+
+          <div class="important-callout">
+            <span class="callout-icon">⚠️</span>
+            <div class="callout-content">
+              <strong>Important:</strong> A "Center" rating doesn't mean factually accurate. A biased rating doesn't mean factually wrong. We only analyze <em>how</em> the story is told, not <em>what</em> the story reports.
+            </div>
+          </div>
+
+          <details class="deep-dive-section">
+            <summary class="deep-dive-toggle">
+              <span class="toggle-icon">+</span>
+              <span class="toggle-text">Deep dive: What counts as "loaded language"?</span>
+            </summary>
+            <div class="deep-dive-content">
+              <h4>3 categories of bias indicators</h4>
+              
+              <div class="indicator-card">
+                <h5>🎯 Emotional Language</h5>
+                <p>Words chosen to provoke emotional response rather than inform</p>
+                <div class="example-pair">
+                  <span class="biased-word">❌ Slammed, destroyed, radical, hero</span>
+                  <span class="neutral-word">✅ Criticized, reduced, progressive, supporter</span>
+                </div>
+              </div>
+
+              <div class="indicator-card">
+                <h5>🏗️ Structural Framing</h5>
+                <p>How information is ordered and emphasized</p>
+                <ul class="help-list">
+                  <li>Burying counterarguments at the end</li>
+                  <li>Headline choice that primes interpretation</li>
+                  <li>Quote selection that favors one side</li>
+                </ul>
+              </div>
+
+              <div class="indicator-card">
+                <h5>📊 Source Selection</h5>
+                <p>Which voices are included and excluded</p>
+                <ul class="help-list">
+                  <li>Only quoting experts from one viewpoint</li>
+                  <li>Omitting relevant opposing perspectives</li>
+                  <li>Unequal time/space given to different sides</li>
+                </ul>
+              </div>
+
+              <h4>Two types of bias</h4>
+              <dl class="glossary-compact">
+                <dt>In quotes (Source Bias)</dt>
+                <dd>Bias from people being quoted — we note it but don't penalize articles for it.</dd>
+                
+                <dt>In narration (Journalistic Bias)</dt>
+                <dd>Bias from the author's word choice and framing — this is what we rate.</dd>
+              </dl>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <!-- Section 4: Privacy & Data -->
+      <details class="help-section" id="privacy">
+        <summary class="section-header">
+          <span class="section-icon">🛡️</span>
+          <h2 class="section-title">Privacy & Data</h2>
+          <span class="expand-indicator">▼</span>
+        </summary>
+        <div class="section-content">
+          <p class="outcome-promise">Know exactly where your data goes.</p>
+          
+          <h3>Your privacy guarantees</h3>
+          <ul class="help-list">
+            <li>No server storage — nothing leaves to our servers</li>
+            <li>Keys stored locally in Chrome's secure storage</li>
+            <li>On-Device stays local — never leaves your computer</li>
+            <li>Cloud sends article to Google only (transient)</li>
+          </ul>
+
+          <details class="deep-dive-section">
+            <summary class="deep-dive-toggle">
+              <span class="toggle-icon">+</span>
+              <span class="toggle-text">Compare: On-Device vs Cloud AI</span>
+            </summary>
+            <div class="deep-dive-content">
+              <div class="mode-chips">
+                <button class="mode-chip active" data-mode="privacy">Privacy</button>
+                <button class="mode-chip" data-mode="depth">Depth</button>
+                <button class="mode-chip" data-mode="speed">Speed</button>
+              </div>
+              
+              <table class="comparison-table" id="comparison-table">
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>On-Device (Gemini Nano)</th>
+                    <th>Cloud (Your API Key)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Privacy</strong></td>
+                    <td>✅ Data never leaves your computer</td>
+                    <td>⚠️ Sent to Google (not stored by us)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Speed</strong></td>
+                    <td>🚀 Fast (5-15s)</td>
+                    <td>🐢 Slower (15-45s)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Analysis Depth</strong></td>
+                    <td>📊 Quick scan</td>
+                    <td>🔬 Deep analysis with tribunal</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Offline</strong></td>
+                    <td>✅ Yes</td>
+                    <td>❌ No</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Requirements</strong></td>
+                    <td>Chrome 127+, 1.7GB model download</td>
+                    <td>Free Gemini API key</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <!-- Section 5: FAQ -->
+      <details class="help-section" id="faq">
+        <summary class="section-header">
+          <span class="section-icon">🤔</span>
+          <h2 class="section-title">FAQ</h2>
+          <span class="expand-indicator">▼</span>
+        </summary>
+        <div class="section-content">
+          <div class="faq-item-compact">
+            <h3 class="faq-question-compact">Why did it rate 'Center' when I disagree?</h3>
+            <p class="faq-answer-compact">We analyze linguistic patterns, not facts. "Center" means neutral language, not factual correctness.</p>
+          </div>
+
+          <div class="faq-item-compact">
+            <h3 class="faq-question-compact">Where do I get an API key?</h3>
+            <p class="faq-answer-compact">Visit <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> → Sign in → Create → Paste into settings.</p>
+          </div>
+
+          <div class="faq-item-compact">
+            <h3 class="faq-question-compact">Works on any website?</h3>
+            <p class="faq-answer-compact">Best on standard news articles. May fail on paywalls, social feeds, videos, or PDFs.</p>
+          </div>
+
+          <details class="deep-dive-section">
+            <summary class="deep-dive-toggle">
+              <span class="toggle-icon">+</span>
+              <span class="toggle-text">More questions</span>
+            </summary>
+            <div class="deep-dive-content">
+              <div class="faq-item-compact">
+                <h3 class="faq-question-compact">Is this tool politically biased?</h3>
+                <p class="faq-answer-compact">We aim for neutrality via adversarial analysis and diverse training data. No AI is perfect — use this alongside other critical thinking tools.</p>
+              </div>
+
+              <div class="faq-item-compact">
+                <h3 class="faq-question-compact">Does this work in other languages?</h3>
+                <p class="faq-answer-compact">Currently optimized for English only. Multilingual support may come in future updates.</p>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <script src="help.js" defer></script>
+</body>
+</html>

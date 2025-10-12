@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   'use strict';
 
   // ========================================
@@ -93,10 +93,10 @@
   function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
     let out = String(markdown || '')
-      .replace(/\[RATING\]\s*:/gi, 'Rating:')
-      .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
+      .replace(/\\[RATING\\]\\s*:/gi, 'Rating:')
+      .replace(/\\[CONFIDENCE\\]\\s*:/gi, 'Confidence:');
 
-    out = out.replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
+    out = out.replace(/(Rating:\\s*)([^\\n]+)/i, (m, p1, p2) => {
       let r = String(p2 || '').trim();
       const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
       r = map[r] || r;
@@ -104,15 +104,34 @@
       return p1 + r;
     });
 
-    if (!/Confidence:\s*/i.test(out)) out += '\nConfidence: Medium';
-    out = out.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
+    if (!/Confidence:\\s*/i.test(out)) out += '\\nConfidence: Medium';
+    out = out.replace(/(Confidence:\\s*)([^\\n]+)/i, (m, p1, p2) => {
       let c = String(p2 || '').trim();
       if (!['High','Medium','Low'].includes(c)) c = 'Medium';
       return p1 + c;
     });
 
-    if (!/^\s*##\s*Overall Bias Assessment/im.test(out)) {
-      out = '## Overall Bias Assessment\n' + out;
+    if (!/^\\s*##\\s*Overall Bias Assessment/im.test(out)) {
+      out = '## Overall Bias Assessment\\n' + out;
+    }
+
+    // If missing a canonical Rating line, derive it from Overall Bias Assessment
+    if (!/^\\s*Rating:/im.test(out)) {
+      const m = out.match(/Overall Bias Assessment\\**\\s*:\\s*([^\\n]+)/i);
+      if (m && m[1]) {
+        let r = m[1].trim();
+        const map = {
+          'Unknown':'Unclear',
+          'Centrist':'Center',
+          'Neutral':'Center',
+          'Centre':'Center',
+          'Left':'Lean Left',
+          'Right':'Lean Right'
+        };
+        r = map[r] || r;
+        if (!allowed.has(r)) r = 'Unclear';
+        out = out.replace(/(##\\s*Overall Bias Assessment[^\\n]*\\n?)/i, $1Rating: \\n);
+      }
     }
     return out;
   }
@@ -252,8 +271,8 @@
   function renderEmpty() {
     els.title.textContent = 'No analysis yet';
     els.title.href = '#';
-    els.domain.textContent = '—';
-    els.time.textContent = '—';
+    els.domain.textContent = 'Ã¢â‚¬â€';
+    els.time.textContent = 'Ã¢â‚¬â€';
     els.source.hidden = true;
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
@@ -276,8 +295,8 @@
     const domain = safeDomain(url);
     els.title.textContent = title || (domain ? `Article on ${domain}` : 'Article');
     els.title.href = url || '#';
-    els.domain.textContent = domain || '—';
-    els.time.textContent = timestamp ? formatTime(timestamp) : '—';
+    els.domain.textContent = domain || 'Ã¢â‚¬â€';
+    els.time.textContent = timestamp ? formatTime(timestamp) : 'Ã¢â‚¬â€';
     if (source) { 
       els.source.textContent = source; 
       els.source.hidden = false; 
@@ -293,7 +312,7 @@
     }
     
     let md = normalizeModeratorSections(summaryText);
-    if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
+    if (md.length > 200000) md = md.slice(0, 200000) + '\n\nÃ¢â‚¬Â¦';
 
     parseAndRenderAnalysis(md, raw);
 
@@ -568,7 +587,7 @@
       }
       
       if (currentSection) {
-        const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
+        const bulletMatch = trimmed.match(/^[-Ã¢â‚¬Â¢*]\s+(.+)$/);
         if (bulletMatch) {
           currentItems.push(bulletMatch[1].trim());
         } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
@@ -608,7 +627,7 @@
       examples = raw.languageAnalysis.slice(0, 5);
     } else {
       examples = items.slice(0, 5).map(item => {
-        const arrowMatch = item.match(/["'](.+?)["']\s*[→'-]\s*(.+)/);
+        const arrowMatch = item.match(/["'](.+?)["']\s*[Ã¢â€ â€™'-]\s*(.+)/);
         if (arrowMatch) {
           return {
             phrase: arrowMatch[1],
@@ -710,7 +729,7 @@
         
         const prosecutorTitle = document.createElement('div');
         prosecutorTitle.className = 'tribunal-section-title';
-        prosecutorTitle.textContent = '⚡ Prosecutor\'s Evidence';
+        prosecutorTitle.textContent = 'Ã¢Å¡Â¡ Prosecutor\'s Evidence';
         prosecutorSection.appendChild(prosecutorTitle);
         
         const evidenceList = document.createElement('ul');
@@ -732,7 +751,7 @@
         
         const defenseTitle = document.createElement('div');
         defenseTitle.className = 'tribunal-section-title';
-        defenseTitle.textContent = '🛡️ Defense\'s Rebuttal';
+        defenseTitle.textContent = 'Ã°Å¸â€ºÂ¡Ã¯Â¸Â Defense\'s Rebuttal';
         defenseSection.appendChild(defenseTitle);
         
         const rebuttalContent = document.createElement('p');
@@ -761,7 +780,7 @@
         
         const investigatorTitle = document.createElement('div');
         investigatorTitle.className = 'tribunal-section-title';
-        investigatorTitle.textContent = '🔬 Investigator\'s Facts';
+        investigatorTitle.textContent = 'Ã°Å¸â€Â¬ Investigator\'s Facts';
         investigatorSection.appendChild(investigatorTitle);
         
         const factsContent = document.createElement('p');
@@ -868,7 +887,7 @@
         const jb = document.createElement('div');
         jb.className = 'tribunal-section-content';
         const ruling = verdict.ruling ? `<strong>${verdict.ruling}</strong>` : '';
-        const reasoning = verdict.reasoning ? ` — ${verdict.reasoning}` : '';
+        const reasoning = verdict.reasoning ? ` Ã¢â‚¬â€ ${verdict.reasoning}` : '';
         jb.innerHTML = `${ruling}${reasoning}`;
         judge.appendChild(jb);
         wrap.appendChild(judge);
@@ -930,10 +949,17 @@
   function addMessageToChat(role, content) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `assistant-message ${role}`;
-    const sanitizedContent = DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
-      ALLOWED_ATTR: []
-    });
+    // Safe fallback if DOMPurify isn't loaded
+    const sanitizedContent = (window.DOMPurify
+      ? DOMPurify.sanitize(content, { 
+          ALLOWED_TAGS: ['strong','em','ul','li','p','br'], 
+          ALLOWED_ATTR: [] 
+        })
+      : content
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/\\*\\*(.*?)\\*\\*/g,'<strong></strong>')
+          .replace(/\\*(.*?)\\*/g,'<em></em>')
+    );
     messageDiv.innerHTML = sanitizedContent;
     els.assistantChatWindow.appendChild(messageDiv);
     els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
@@ -1031,13 +1057,16 @@ ${analysisContext}`;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}&alt=sse`;
 
     const requestBody = {
-      contents: [
-        ...conversationHistory
-      ],
-      systemInstruction: {
-        parts: [{ text: systemPrompt }]
-      }
-    };
+  contents: conversationHistory,
+  systemInstruction: {
+    parts: [{ text: systemPrompt }]
+  },
+  generationConfig: {
+    maxOutputTokens: 512,
+    temperature: 0.7,
+    topP: 0.9
+  }
+};
 
     const response = await fetch(url, {
       method: 'POST',

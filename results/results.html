@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BiasNeutralizer • Results</title>
+  <title>BiasNeutralizer â€¢ Results</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -56,9 +56,9 @@
       <div class="bias-hero initially-hidden">
         <div class="hero-rating-visual">
           <div class="bias-rating-container">
-            <div class="bias-rating" id="bias-rating">—</div>
+            <div class="bias-rating" id="bias-rating">â€”</div>
           </div>
-          <div class="bias-confidence" id="bias-confidence">—</div>
+          <div class="bias-confidence" id="bias-confidence">â€”</div>
         </div>
         <div class="hero-details">
           <div class="report-meta">
@@ -66,22 +66,18 @@
             <a id="article-title" class="article-title" href="#" target="_blank" rel="noopener">No analysis yet</a>
             <div class="article-submeta">
               <span class="meta-item">
-                <span class="meta-icon">🌐</span>
-                <span id="article-domain">—</span>
+                <span class="meta-icon">ðŸŒ</span>
+                <span id="article-domain">â€”</span>
               </span>
-              <span class="meta-divider">•</span>
+              <span class="meta-divider">â€¢</span>
               <span class="meta-item">
-                <span class="meta-icon">⏱️</span>
-                <time id="analysis-time">—</time>
+                <span class="meta-icon">â±ï¸</span>
+                <time id="analysis-time">â€”</time>
               </span>
-              <span class="source-chip" id="analysis-source" hidden>—</span>
+              <span class="source-chip" id="analysis-source" hidden>â€”</span>
             </div>
           </div>
-          <div class="report-actions">
-            <button class="primary-button" id="open-article" disabled>
-              <span>Open Article</span>
-            </button>
-          </div>
+          <div class="report-actions"></div>
         </div>
       </div>
 
@@ -89,10 +85,13 @@
         <div class="assistant-input-bar" id="assistant-trigger">
             <span class="assistant-placeholder">Ask anything about this analysis...</span>
         </div>
-        <div class="prompt-starters">
-            <button class="prompt-starter-btn" data-prompt="Explain this rating in simple terms.">"Explain this rating..."</button>
-            <button class="prompt-starter-btn" data-prompt="What was the strongest bias indicator found?">"What was the strongest indicator?"</button>
-            <button class="prompt-starter-btn" data-prompt="Show me the most loaded phrase.">"Show me the most loaded phrase."</button>
+                <div class="prompt-starters">
+          <button class="prompt-starter-btn" data-prompt="Explain this rating in simple terms.">Explain this rating</button>
+          <button class="prompt-starter-btn" data-prompt="What was the strongest bias indicator found?">Strongest indicator</button>
+          <button class="prompt-starter-btn" data-prompt="Show me the most loaded phrase.">Most loaded phrase</button>
+          <button class="prompt-starter-btn" data-prompt="List any missing viewpoints or sources.">Missing viewpoints</button>
+          <button class="prompt-starter-btn" data-prompt="What did the Skeptic agent praise as neutral or fair?">What was fair?</button>
+          <button class="prompt-starter-btn" data-prompt="Propose a more neutral headline for this article.">Neutral headline</button>
         </div>
       </div>
 
@@ -103,7 +102,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">📝</span>
+                <span class="card-icon">ðŸ“</span>
                 <h2 class="card-title">Article Summary</h2>
               </div>
               <div class="card-body" id="summary-content">
@@ -116,7 +115,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">🔍</span>
+                <span class="card-icon">ðŸ”</span>
                 <h2 class="card-title">Findings</h2>
               </div>
               <div class="card-body" id="findings-content">
@@ -130,7 +129,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">⚖️</span>
+                <span class="card-icon">âš–ï¸</span>
                 <h2 class="card-title">Tribunal Verdicts</h2>
               </div>
               <div class="card-body" id="tribunal-verdicts-content">
@@ -144,7 +143,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">📊</span>
+                <span class="card-icon">ðŸ“Š</span>
                 <h2 class="card-title">Structural Analysis</h2>
               </div>
               <div class="card-body" id="structural-analysis-content">
@@ -157,7 +156,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">⚠️</span>
+                <span class="card-icon">âš ï¸</span>
                 <h2 class="card-title">Biased Languages Used</h2>
               </div>
               <div class="card-body" id="biased-languages-content">
@@ -170,7 +169,7 @@
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
-                <span class="card-icon">✓</span>
+                <span class="card-icon">âœ“</span>
                 <h2 class="card-title">Neutral Languages Used</h2>
               </div>
               <div class="card-body" id="neutral-languages-content">
@@ -181,9 +180,9 @@
 
           <details class="analysis-card methodology-card">
             <summary class="card-header collapsible">
-              <span class="card-icon">📋</span>
+              <span class="card-icon">ðŸ“‹</span>
               <h2 class="card-title">Methodology Note</h2>
-              <span class="expand-icon">▼</span>
+              <span class="expand-icon">â–¼</span>
             </summary>
             <div class="card-content">
               <div class="card-body" id="methodology-content">
