@@ -436,6 +436,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.cancelDownloadButton.addEventListener('click', handleCancelDownload);
   elements.skipCloudButton.addEventListener('click', handleSkipToCloud);
 
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    console.log('[BiasNeutralizer Setup] Page unloading, cleaning up...');
+    
+    // If download is in progress, mark it for recovery
+    if (state && state.isDownloading) {
+      chrome.storage.local.set({ downloadInProgress: true }, () => {
+        console.log('[BiasNeutralizer Setup] Download state saved for recovery');
+      });
+    }
+    
+    // Destroy session if exists
+    if (state && state.currentSession) {
+      try {
+        state.currentSession.destroy();
+      } catch (error) {
+        console.error('[BiasNeutralizer Setup] Cleanup error:', error);
+      }
+    }
+  });
+
   // ========================================
   // INITIALIZATION
   // ========================================
@@ -465,28 +486,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateUIForAvailability(availabilityInfo);
 
   console.log('[BiasNeutralizer Setup] Setup page ready');
-});
-
-// ========================================
-// CLEANUP ON UNLOAD
-// ========================================
-
-window.addEventListener('beforeunload', () => {
-  console.log('[BiasNeutralizer Setup] Page unloading, cleaning up...');
-  
-  // If download is in progress, mark it for recovery
-  if (state && state.isDownloading) {
-    chrome.storage.local.set({ downloadInProgress: true }, () => {
-      console.log('[BiasNeutralizer Setup] Download state saved for recovery');
-    });
-  }
-  
-  // Destroy session if exists
-  if (state && state.currentSession) {
-    try {
-      state.currentSession.destroy();
-    } catch (error) {
-      console.error('[BiasNeutralizer Setup] Cleanup error:', error);
-    }
-  }
 });

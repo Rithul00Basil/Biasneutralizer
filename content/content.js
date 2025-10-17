@@ -157,32 +157,128 @@ function injectHighlightStyles() {
     }
 
     .neutral-highlight {
-      background-color: #d4edda;
-      border-bottom: 2px solid #28a745;
+      background-color: rgba(209, 250, 229, 0.8);
+      border-bottom: 2px solid #10b981;
       cursor: pointer;
       padding: 2px 4px;
       border-radius: 3px;
-      transition: background-color 0.2s ease;
+      transition: all 0.2s ease;
     }
 
     .neutral-highlight:hover {
-      background-color: #c3e6cb;
+      background-color: rgba(167, 243, 208, 0.9);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
     }
 
     /* Small popup styles */
     .neutralizer-popup {
       position: absolute;
       background: white;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      padding: 12px;
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      padding: 0;
       z-index: 999999;
-      min-width: 250px;
-      max-width: 400px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-width: 300px;
+      max-width: 450px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
-      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    .popup-header {
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .popup-header-biased {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .popup-header-neutral {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .popup-title {
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 0 8px 0;
+      opacity: 0.9;
+    }
+
+    .popup-phrase {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 0;
+      word-break: break-word;
+    }
+
+    .popup-body {
+      padding: 20px;
+    }
+
+    .popup-section {
+      margin-bottom: 16px;
+    }
+
+    .popup-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .popup-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+
+    .popup-section-content {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #1f2937;
+    }
+
+    .popup-actions {
+      display: flex;
+      gap: 8px;
+      padding: 16px 20px;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .popup-btn {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .popup-btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .popup-btn-primary:hover {
+      background: #2563eb;
+    }
+
+    .popup-btn-secondary {
+      background: white;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+
+    .popup-btn-secondary:hover {
+      background: #f3f4f6;
     }
 
     .neutralizer-popup-buttons {
@@ -671,9 +767,11 @@ function injectHighlightStyles() {
 }
 
 function handleHighlightData(biasedPhrases, neutralPhrases) {
-  console.log('[BiasNeutralizer] Received highlight request:', {
-    biasedCount: biasedPhrases.length,
-    neutralCount: neutralPhrases.length
+  console.log('[BiasNeutralizer] Highlight data received:', {
+    biasedCount: biasedPhrases?.length || 0,
+    neutralCount: neutralPhrases?.length || 0,
+    sampleBiased: biasedPhrases?.[0],
+    sampleNeutral: neutralPhrases?.[0]
   });
 
   // Inject styles first
@@ -742,13 +840,21 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
     neutralAlternative = phraseObj.neutral_alternative || '';
     phraseType = phraseObj.type || '';
   } else if (dataType === 'neutral') {
-    phrase = phraseObj.example;
+    // Try multiple possible field names for neutral phrases
+    phrase = phraseObj.example || phraseObj.phrase || phraseObj.text || '';
     explanation = phraseObj.explanation || '';
     neutralAlternative = '';
     phraseType = phraseObj.type || '';
   }
 
-  if (!phrase || typeof phrase !== 'string' || phrase.trim().length === 0) {
+  // Defensive check after extraction
+  if (!phrase || typeof phrase !== 'string') {
+    console.warn('[BiasNeutralizer] Neutral phrase missing text:', phraseObj);
+    return;
+  }
+  
+  if (phrase.trim().length === 0) {
+    console.warn('[BiasNeutralizer] Empty phrase text:', phraseObj);
     return;
   }
 
@@ -793,75 +899,122 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
 /**
  * Find all text matches for a phrase within a container
  * Returns an array of {range, text} objects
+ * Uses concatenated text search to handle phrases spanning HTML elements
  */
 function findTextMatches(searchText, container) {
   const matches = [];
-  const searchLower = searchText.toLowerCase();
+  const searchLower = searchText.toLowerCase().trim();
+  if (!searchLower) return matches;
 
-  // Create a TreeWalker for text nodes
+  // Collect all text nodes with their cumulative offset
+  const textNodes = [];
+  let cumulativeOffset = 0;
+
   const walker = document.createTreeWalker(
     container,
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: (node) => {
-        // Skip if parent is already highlighted
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
 
+        // Skip already highlighted, scripts, styles, popups
         if (parent.classList?.contains('bias-highlight') ||
             parent.classList?.contains('neutral-highlight') ||
             parent.closest('script, style, noscript, .neutralizer-popup')) {
           return NodeFilter.FILTER_REJECT;
         }
 
-        // Only accept nodes with content that might contain our search text
-        const text = node.textContent.toLowerCase();
-        if (text.includes(searchLower)) {
-          return NodeFilter.FILTER_ACCEPT;
-        }
-
-        return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
       }
     }
   );
 
-  // Collect all matching text nodes
-  const textNodes = [];
   let node;
   while (node = walker.nextNode()) {
-    textNodes.push(node);
+    const text = node.textContent;
+    textNodes.push({
+      node: node,
+      startOffset: cumulativeOffset,
+      endOffset: cumulativeOffset + text.length,
+      text: text
+    });
+    cumulativeOffset += text.length;
   }
 
-  // Search each text node for matches
-  textNodes.forEach(textNode => {
-    const text = textNode.textContent;
-    const textLower = text.toLowerCase();
+  if (textNodes.length === 0) return matches;
 
-    let startIndex = 0;
-    let foundIndex;
+  // Build concatenated text
+  const fullText = textNodes.map(tn => tn.text).join('');
+  const fullTextLower = fullText.toLowerCase();
 
-    // Find all occurrences in this text node
-    while ((foundIndex = textLower.indexOf(searchLower, startIndex)) !== -1) {
-      try {
-        // Create a range for this match
-        const range = document.createRange();
-        range.setStart(textNode, foundIndex);
-        range.setEnd(textNode, foundIndex + searchText.length);
+  // Find all occurrences in concatenated text
+  let searchPos = 0;
+  while ((searchPos = fullTextLower.indexOf(searchLower, searchPos)) !== -1) {
+    const matchEnd = searchPos + searchText.length;
 
-        matches.push({
-          range: range,
-          text: text.substring(foundIndex, foundIndex + searchText.length)
-        });
+    // Map back to DOM nodes
+    const range = mapOffsetToRange(textNodes, searchPos, matchEnd);
+    if (range) {
+      matches.push({
+        range: range,
+        text: fullText.substring(searchPos, matchEnd)
+      });
+    }
 
-        startIndex = foundIndex + searchText.length;
-      } catch (error) {
-        console.warn('[BiasNeutralizer] Error creating range:', error);
+    searchPos = matchEnd;
+  }
+
+  return matches;
+}
+
+/**
+ * Helper: Map text offset to DOM Range
+ * Handles phrases spanning multiple text nodes and HTML elements
+ */
+function mapOffsetToRange(textNodes, startOffset, endOffset) {
+  let startNode = null, startPos = 0;
+  let endNode = null, endPos = 0;
+
+  for (const tn of textNodes) {
+    if (!startNode && startOffset >= tn.startOffset && startOffset < tn.endOffset) {
+      startNode = tn.node;
+      startPos = startOffset - tn.startOffset;
+    }
+
+    if (!endNode && endOffset >= tn.startOffset && endOffset <= tn.endOffset) {
+      endNode = tn.node;
+      endPos = endOffset - tn.startOffset;
+      break;
+    } else if (!endNode && endOffset > tn.endOffset && endOffset <= tn.endOffset + textNodes[textNodes.indexOf(tn) + 1]?.text.length) {
+      // Handle case where end is in next node
+      continue;
+    }
+  }
+
+  // If end wasn't found in exact node, search forward
+  if (!endNode) {
+    for (let i = textNodes.length - 1; i >= 0; i--) {
+      const tn = textNodes[i];
+      if (endOffset <= tn.endOffset) {
+        endNode = tn.node;
+        endPos = Math.min(endOffset - tn.startOffset, tn.text.length);
         break;
       }
     }
-  });
+  }
 
-  return matches;
+  if (!startNode || !endNode) return null;
+
+  try {
+    const range = document.createRange();
+    range.setStart(startNode, startPos);
+    range.setEnd(endNode, endPos);
+    return range;
+  } catch (e) {
+    console.warn('[BiasNeutralizer] Range creation failed:', e);
+    return null;
+  }
 }
 
 /**
@@ -891,19 +1044,28 @@ function getRangeIdentifier(range) {
 // ========== CLICK HANDLERS AND POPUPS ==========
 
 function setupHighlightClickListeners() {
-  // Remove any existing listener
-  document.removeEventListener('click', handleDocumentClick);
+  // Remove existing to prevent duplicates
+  document.removeEventListener('click', handleDocumentClick, true);
 
-  // Add new listener
-  document.addEventListener('click', handleDocumentClick);
+  // Add with capture phase for reliability
+  document.addEventListener('click', handleDocumentClick, true);
 
-  console.log('[BiasNeutralizer] Click listeners setup');
+  console.log('[BiasNeutralizer] Click listeners bound with capture phase');
 }
 
 function handleDocumentClick(event) {
   const target = event.target;
 
-  // If clicked on a biased highlight (orange), show biased popup
+  // Log all clicks on highlights for debugging
+  if (target.classList.contains('bias-highlight') || target.classList.contains('neutral-highlight')) {
+    console.log('[BiasNeutralizer] Highlight clicked:', {
+      type: target.classList.contains('bias-highlight') ? 'biased' : 'neutral',
+      text: target.textContent,
+      dataset: target.dataset
+    });
+  }
+
+  // Check biased highlight
   if (target.classList.contains('bias-highlight')) {
     event.preventDefault();
     event.stopPropagation();
@@ -911,7 +1073,7 @@ function handleDocumentClick(event) {
     return;
   }
 
-  // If clicked on a neutral highlight (green), show neutral popup
+  // Check neutral highlight
   if (target.classList.contains('neutral-highlight')) {
     event.preventDefault();
     event.stopPropagation();
@@ -919,63 +1081,71 @@ function handleDocumentClick(event) {
     return;
   }
 
-  // If clicked outside popup and highlight, close popup
-  if (currentPopup && !currentPopup.contains(target)) {
+  // Close popup if clicked outside
+  if (currentPopup && !currentPopup.contains(target) &&
+      !target.closest('.bias-highlight, .neutral-highlight')) {
     closePopup();
   }
 }
 
 function showBiasedPopup(highlightElement) {
-  // Close any existing popup
   closePopup();
 
   const originalPhrase = highlightElement.getAttribute('data-original-phrase');
   const explanation = highlightElement.getAttribute('data-explanation');
   const neutralAlternative = highlightElement.getAttribute('data-neutral-alternative');
 
-  // Create popup
   const popup = document.createElement('div');
   popup.className = 'neutralizer-popup';
 
-  // Create content
-  const content = document.createElement('div');
-  content.innerHTML = `
-    <div style="margin-bottom: 8px;">
-      <strong>Biased phrase detected:</strong>
-      <div style="margin-top: 4px; color: #666;">"${originalPhrase}"</div>
-    </div>
+  const header = document.createElement('div');
+  header.className = 'popup-header popup-header-biased';
+  header.innerHTML = `
+    <div class="popup-title">Biased Language Detected</div>
+    <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
   `;
+  popup.appendChild(header);
 
-  if (explanation) {
-    const explanationDiv = document.createElement('div');
-    explanationDiv.style.fontSize = '12px';
-    explanationDiv.style.color = '#666';
-    explanationDiv.style.marginTop = '6px';
-    explanationDiv.textContent = explanation;
-    content.appendChild(explanationDiv);
+  const body = document.createElement('div');
+  body.className = 'popup-body';
+
+  const section1 = document.createElement('div');
+  section1.className = 'popup-section';
+  section1.innerHTML = `
+    <div class="popup-section-label">Why This Is Biased</div>
+    <div class="popup-section-content">${escapeHtml(explanation || 'Loaded language detected')}</div>
+  `;
+  body.appendChild(section1);
+
+  if (neutralAlternative) {
+    const section2 = document.createElement('div');
+    section2.className = 'popup-section';
+    section2.innerHTML = `
+      <div class="popup-section-label">Neutral Alternative</div>
+      <div class="popup-section-content">"${escapeHtml(neutralAlternative)}"</div>
+    `;
+    body.appendChild(section2);
   }
 
-  popup.appendChild(content);
+  popup.appendChild(body);
 
-  // Create buttons
-  const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'neutralizer-popup-buttons';
+  const actions = document.createElement('div');
+  actions.className = 'popup-actions';
 
-  const knowMoreBtn = document.createElement('button');
-  knowMoreBtn.className = 'neutralizer-popup-know-more';
-  knowMoreBtn.textContent = 'Know more';
-  knowMoreBtn.onclick = () => handleKnowMore();
+  const learnBtn = document.createElement('button');
+  learnBtn.className = 'popup-btn popup-btn-secondary';
+  learnBtn.textContent = 'Learn More';
+  learnBtn.onclick = () => handleKnowMore();
 
   const neutralizeBtn = document.createElement('button');
-  neutralizeBtn.className = 'neutralizer-popup-neutralize';
+  neutralizeBtn.className = 'popup-btn popup-btn-primary';
   neutralizeBtn.textContent = 'Neutralize';
   neutralizeBtn.onclick = () => handleNeutralize(originalPhrase, popup, neutralAlternative);
 
-  buttonContainer.appendChild(knowMoreBtn);
-  buttonContainer.appendChild(neutralizeBtn);
-  popup.appendChild(buttonContainer);
+  actions.appendChild(learnBtn);
+  actions.appendChild(neutralizeBtn);
+  popup.appendChild(actions);
 
-  // Position popup
   document.body.appendChild(popup);
   positionPopup(popup, highlightElement);
 

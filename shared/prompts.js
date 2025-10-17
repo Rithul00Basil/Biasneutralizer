@@ -20,7 +20,13 @@ Definitions:
 
 Rules:
 - Do not judge ideology or search for bias
-- Detect opinion/analysis markers in headers/bylines (e.g., "Opinion", "Analysis", "Column")
+- Detect opinion/analysis markers ONLY when explicitly present in:
+  * Article header/title (e.g., "Opinion:", "Analysis:", "Commentary")
+  * Byline descriptors (e.g., "Opinion Columnist", "Editorial Board", "Commentary Writer")
+  * Consistent first-person perspective ("I", "we") throughout the article, not just quotes
+- Standard news reporting with quotes or descriptive language remains "News"
+- Breaking news, event coverage, data releases default to "News" unless explicit opinion markers exist
+- Do NOT classify as opinion merely due to adjectives, tone, or narrative structure
 - Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
 - Estimate quoted material: approximate % of words inside quotation marks
   — Low = 0—30%, Medium = 31—60%, High = 61—100%

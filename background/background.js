@@ -5,6 +5,16 @@
 
 import { AgentPrompts } from '../shared/prompts.js';
 
+// === FIX #1: Configure sidepanel at startup ===
+(async () => {
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log('[BiasNeutralizer Background] Side panel behavior configured at startup');
+  } catch (error) {
+    console.error('[BiasNeutralizer Background] Failed to set panel behavior at startup:', error);
+  }
+})();
+
 let activeScanControllers = new Map(); // tabId -> AbortController
 
 class RetriableError extends Error {}
@@ -135,7 +145,15 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 }
 
 // Listen for extension installation
-chrome.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener(async (details) => {
+  // === FIX #2: Configure sidepanel on install/update ===
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log('[BiasNeutralizer Background] Side panel behavior configured on install');
+  } catch (error) {
+    console.error('[BiasNeutralizer Background] Failed to set panel behavior:', error);
+  }
+
   if (details.reason === 'install') {
     console.log('[BiasNeutralizer] Extension installed, initializing first-time setup');
     // Set hasCompletedSetup to false on first install
@@ -433,8 +451,42 @@ function safeJSON(input, fallback = null) {
       }
     }
 
+    // Special handler for tribunal responses that may be truncated
+    if (s.includes('"charges"') || s.includes('"rebuttals"') || s.includes('"verified_facts"')) {
+      console.log('[BiasNeutralizer] Attempting to repair truncated tribunal JSON...');
+
+      try {
+        // Find the last complete object in the JSON
+        let repaired = s;
+
+        // Count braces
+        const openBraces = (repaired.match(/\{/g) || []).length;
+        const closeBraces = (repaired.match(/\}/g) || []).length;
+        const openBrackets = (repaired.match(/\[/g) || []).length;
+        const closeBrackets = (repaired.match(/\]/g) || []).length;
+
+        // Close any unclosed arrays/objects
+        if (openBrackets > closeBrackets) {
+          repaired += ']'.repeat(openBrackets - closeBrackets);
+        }
+        if (openBraces > closeBraces) {
+          repaired += '}'.repeat(openBraces - closeBraces);
+        }
+
+        // Remove trailing commas that break JSON
+        repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+
+        const parsed = JSON.parse(repaired);
+        console.log('[BiasNeutralizer] Tribunal JSON successfully repaired');
+        return parsed;
+      } catch (repairError) {
+        console.warn('[BiasNeutralizer] Tribunal JSON repair failed, using safe fallback');
+        // Continue to return fallback below
+      }
+    }
+
     // Log the problematic input for debugging
-    console.error('[BiasNeutralizer] JSON parse failed. First 500 chars:', s.slice(0, 500));
+    console.warn('[BiasNeutralizer] JSON parse failed, using fallback. First 500 chars:', s.slice(0, 500));
     
   } catch (err) {
     console.error('[BiasNeutralizer] JSON parse exception:', err.message);

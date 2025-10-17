@@ -4,63 +4,45 @@
   // ========================================
   // SUMMARY LOADER
   // ========================================
-  async function loadAndRenderSummary(targetElement) {
-    const { lastSummary } = await storageGet(['lastSummary']);
+  async function loadAndRenderSummary() {
+    console.log('[Results] Loading summary...');
 
-    if (!lastSummary || lastSummary.status === 'generating') {
-      targetElement.innerHTML = '<p class="placeholder-text">Generating on-device summary...</p>';
-      return;
-    }
+    const summarySection = document.getElementById('summary-content');
+    if (!summarySection) return;
 
-    if (lastSummary.status === 'error') {
-      targetElement.innerHTML = `<p class="placeholder-text error-text">Could not generate summary: ${lastSummary.data}</p>`;
-      return;
-    }
+    let attempts = 0;
+    const maxAttempts = 60;
 
-    if (lastSummary.status === 'complete') {
-      const summaryMarkdown = lastSummary.data;
-      const keyPoints = summaryMarkdown.split('- ').filter(p => p.trim().length > 0);
-      const ul = document.createElement('ul');
-      keyPoints.forEach(pointText => {
-        const li = document.createElement('li');
-        li.textContent = pointText.trim();
-        ul.appendChild(li);
-      });
-      targetElement.innerHTML = '';
-      targetElement.appendChild(ul);
-    }
-  }
+    const pollInterval = setInterval(async () => {
+      attempts++;
 
-  // Enhanced loadAndRenderSummary with timeout/fallback
-  async function loadAndRenderSummary(targetElement, maxWaitMs = 30000) {
-    const startTime = Date.now();
-    while (Date.now() - startTime < maxWaitMs) {
-      const { lastSummary } = await storageGet(['lastSummary']);
-      if (lastSummary?.status === 'complete') {
-        // Render as before...
-        const summaryMarkdown = lastSummary.data;
-        const keyPoints = summaryMarkdown.split('- ').filter(p => p.trim().length > 0);
-        const ul = document.createElement('ul');
-        keyPoints.forEach(pointText => {
-          const li = document.createElement('li');
-          li.textContent = pointText.trim();
-          ul.appendChild(li);
-        });
-        targetElement.innerHTML = '';
-        targetElement.appendChild(ul);
-        return;
-      } else if (lastSummary?.status === 'error') {
-        targetElement.innerHTML = `<p class="placeholder-text error-text">Summary failed: ${lastSummary.data}. Using quick extract...</p>`;
-        // Fallback: Extract first 3 paras from stored content
-        const { lastAnalysis } = await storageGet(['lastAnalysis']);
-        const fallbackText = lastAnalysis?.paragraphs?.slice(0, 3).join(' ').substring(0, 200) + '...';
-        targetElement.innerHTML += `<p>${fallbackText}</p>`;
+      const storage = await storageGet(['lastSummary']);
+      const summaryData = storage?.lastSummary;
+
+      if (!summaryData) {
+        if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          summarySection.innerHTML = '<p class="placeholder-text">Summary not available</p>';
+        }
         return;
       }
-      await new Promise(r => setTimeout(r, 1000)); // Poll every 1s
-    }
-    // Timeout: Simple JS fallback
-    targetElement.innerHTML = '<p class="placeholder-text">Summary timed out. Quick extract:</p><ul><li>Key topic: Based on headlines.</li></ul>';
+
+      if (summaryData.status === 'complete') {
+        clearInterval(pollInterval);
+        summarySection.innerHTML = summaryData.data || '<p class="placeholder-text">Summary completed but empty</p>';
+        console.log('[Results] Summary loaded successfully');
+      } else if (summaryData.status === 'generating') {
+        summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
+      } else if (summaryData.status === 'error') {
+        clearInterval(pollInterval);
+        summarySection.innerHTML = `<p class="placeholder-text">Summary generation failed: ${summaryData.data}</p>`;
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        summarySection.innerHTML = '<p class="placeholder-text">Summary generation timed out</p>';
+      }
+    }, 1000);
   }
 
   // ========================================
@@ -117,6 +99,86 @@
         }
       }
     });
+  }
+
+  // ========================================
+  // ENHANCED MARKDOWN RENDERING WITH LATEX
+  // ========================================
+  function enhancedMarkdownToHtml(text) {
+    if (!text) return '';
+
+    let html = text
+      // Escape HTML entities first
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Code blocks (must be before inline code)
+    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      const language = lang || '';
+      return `<pre><code class="language-${language}">${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Headers (h1-h3)
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // Blockquotes
+    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+
+    // Horizontal rules
+    html = html.replace(/^---$/gm, '<hr/>');
+    html = html.replace(/^\*\*\*$/gm, '<hr/>');
+
+    // Bold and italic (must be before lists to avoid conflicts)
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+    // Unordered lists
+    html = html.replace(/^[-•*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, ''); // Merge consecutive lists
+
+    // Numbered lists
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+    // Line breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = html.replace(/^([^<])/gm, '<p>$1');
+    html = html.replace(/([^>])$/gm, '$1</p>');
+
+    // Clean up malformed paragraphs
+    html = html.replace(/<p>\s*<\/p>/g, '');
+    html = html.replace(/<p>(<[hulo])/g, '$1');
+    html = html.replace(/(<\/[hulo][^>]*>)<\/p>/g, '$1');
+
+    return html;
+  }
+
+  function renderLatexInElement(element) {
+    // Use KaTeX to render LaTeX in the element
+    if (window.renderMathInElement) {
+      try {
+        window.renderMathInElement(element, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false }
+          ],
+          throwOnError: false,
+          errorColor: '#cc0000'
+        });
+      } catch (error) {
+        console.warn('[Results] LaTeX rendering error:', error);
+      }
+    }
   }
 
   // ========================================
@@ -192,6 +254,25 @@
   // INITIALIZATION
   // ========================================
   document.addEventListener('DOMContentLoaded', async () => {
+    // === CRITICAL FIX: Hide any blocking overlays immediately ===
+    // Remove loading state if it exists
+    const loadingState = document.querySelector('.loading-state');
+    if (loadingState) {
+      loadingState.remove();
+      console.log('[Results] Removed blocking loading state');
+    }
+
+    // Ensure assistant overlay is hidden
+    const assistantOverlay = document.querySelector('.assistant-overlay');
+    if (assistantOverlay) {
+      assistantOverlay.classList.remove('visible');
+      console.log('[Results] Hidden assistant overlay');
+    }
+
+    // Ensure no pointer-events blocking
+    document.body.style.pointerEvents = 'auto';
+    // Rest of initialization...
+
     cacheEls();
     bindEvents();
     setupStorageListener();
@@ -399,7 +480,7 @@
     
     animateRatingRing(extracted.rating, extracted.confidence);
 
-    loadAndRenderSummary(document.getElementById('summary-content'));
+    loadAndRenderSummary();
 
     // Render new Tribunal and Structural sections
     const tribunal = raw && raw.tribunalDebate ? raw.tribunalDebate : null;
@@ -1081,7 +1162,7 @@
 
       // Create session (safe in user-activated event handler)
       const session = await self.LanguageModel.create({
-        systemPrompt: 'You are a professional news bias analysis assistant. Answer questions clearly and concisely based ONLY on the analysis data provided. If information is not in the context, say so. Use simple markdown formatting.'
+        systemPrompt: 'You are a knowledgeable AI assistant with expertise in news bias analysis, media literacy, journalism, and general topics. While you have access to a specific news analysis in the context, you can answer ANY question the user asks - not just about the analysis. When discussing the analysis, reference the specific data provided. For other topics, use your general knowledge. Format responses using markdown including LaTeX for mathematical expressions (use $...$ for inline math and $$...$$ for display math).'
       });
 
       // Prepare context
@@ -1110,24 +1191,18 @@
       for await (const chunk of stream) {
         fullResponseText = chunk.trim();
         
-        // Convert markdown to HTML for display
-        const markdownToHtml = (text) => {
-          let html = text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/^- (.*$)/gm, '<li>$1</li>')
-            .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-          return html;
-        };
-        
-        const dirtyHtml = markdownToHtml(fullResponseText);
+        // Use enhanced markdown to HTML conversion
+        const dirtyHtml = enhancedMarkdownToHtml(fullResponseText);
         messageElement.innerHTML = (window.DOMPurify
-          ? DOMPurify.sanitize(dirtyHtml, { ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'], ALLOWED_ATTR: [] })
+          ? DOMPurify.sanitize(dirtyHtml, { 
+              ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br', 'h1', 'h2', 'h3', 'code', 'pre', 'blockquote', 'hr'], 
+              ALLOWED_ATTR: ['class'] 
+            })
           : dirtyHtml
         );
+        
+        // Render LaTeX expressions
+        renderLatexInElement(messageElement);
         
         // Auto-scroll to bottom
         els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
@@ -1163,12 +1238,17 @@
       return;
     }
 
-    const systemPrompt = `You are the BiasNeutralizer Analysis Assistant. Your purpose is to explain the provided news analysis clearly, neutrally, and concisely.
-- You MUST base your answers strictly on the JSON context provided below. Do not invent information.
-- If the user asks a question that cannot be answered by the context, politely state that.
-- Format your response using simple markdown (bold, italics, lists).
+    const systemPrompt = `You are a knowledgeable AI assistant with expertise in news bias analysis, media literacy, journalism, and general topics.
 
-ANALYSIS CONTEXT:
+You have access to a news bias analysis (provided below), but you can answer ANY question the user asks:
+- Questions about the analysis: Use the specific data from the context below
+- Questions about bias, journalism, media literacy: Use your expertise
+- General questions on any topic: Answer helpfully using your knowledge
+- Be conversational, helpful, and informative
+
+Format your responses using markdown (bold, italics, lists, headers, code blocks) and LaTeX for math (use $...$ for inline, $$...$$ for display).
+
+ANALYSIS CONTEXT (for reference when discussing this article):
 ${analysisContext}`;
 
     // Use very fast model for results assistant cloud mode
@@ -1219,22 +1299,17 @@ ${analysisContext}`;
             const textPart = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (textPart) {
               fullResponseText += textPart;
-              const markdownToHtml = (text) => {
-                let html = text
-                  .replace(/&/g, '&amp;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;')
-                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                  .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                  .replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>')
-                  .replace(/<\/ul>(\s*)<ul>/g, '$1');
-                return html;
-              };
-              const dirtyHtml = markdownToHtml(fullResponseText);
+              
+              // Use enhanced markdown to HTML conversion
+              const dirtyHtml = enhancedMarkdownToHtml(fullResponseText);
               messageElement.innerHTML = DOMPurify.sanitize(dirtyHtml, {
-                ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'],
-                ALLOWED_ATTR: []
+                ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br', 'h1', 'h2', 'h3', 'code', 'pre', 'blockquote', 'hr'],
+                ALLOWED_ATTR: ['class']
               });
+              
+              // Render LaTeX expressions
+              renderLatexInElement(messageElement);
+              
               els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
             }
           } catch (e) {

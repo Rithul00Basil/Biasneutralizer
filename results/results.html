@@ -12,6 +12,10 @@
   <link rel="icon" href="../icons/icon32.png" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#0F172A" />
+  <!-- KaTeX for LaTeX rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
   <style>html,body{min-height:100%;margin:0;padding:0;}</style>
 
 </head>
@@ -218,9 +222,11 @@
       </div>
   </div>
 
-  <script src="results.js" type="module"></script>
-  <footer class="api-footer">
+<script src="../shared/purify.min.js"></script>
+<script src="results.js" type="module"></script>  
+   <footer class="api-footer">
     <div class="api-footer-title">Powered by Chrome Built-in AI (Prompt API, Summarizer API, Rewriter API)</div>
   </footer>
 </body>
 </html>
+  

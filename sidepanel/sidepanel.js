@@ -89,8 +89,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const t = String(contextJSON?.type || '').toLowerCase();
     const isOpinionAnalysis = !!contextJSON?.is_opinion_or_analysis || t === 'opinion' || t === 'analysis';
 
+    console.log('[BiasNeutralizer] Rating Calculation:', {
+      contextType: t,
+      isOpinionAnalysis: isOpinionAnalysis,
+      will_return_unclear: isOpinionAnalysis,
+      biasIndicators: hunterJSON?.bias_indicators?.length || 0,
+      balanceScore: skepticJSON?.balance_score || 0
+    });
+
     // Handle Opinion/Analysis Content
     if (isOpinionAnalysis) {
+      console.log('[BiasNeutralizer] ⚠️ Content classified as Opinion/Analysis - returning Unclear');
       return [
         '### Findings',
         '- **Overall Bias Assessment:** Unclear',
@@ -634,6 +643,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       // --- Immediately trigger the separate on-device summary ---
       triggerOnDeviceSummary(articleContent);
+      console.log('[BiasNeutralizer] ✅ Summary generation started in background');
 
       const availability = await window.LanguageModel.availability();
       if (availability !== 'available') {
@@ -658,6 +668,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // We only need the core agents for chunk analysis
         const contextPrompt = AgentPrompts.createContextPrompt(chunk);
         const contextJSON = safeJSON(await session.prompt(contextPrompt), { type: 'Unknown' });
+        console.log('[BiasNeutralizer] Context Analysis Result:', {
+          type: contextJSON.type,
+          is_opinion: contextJSON.is_opinion_or_analysis,
+          confidence: contextJSON.confidence,
+          full: contextJSON
+        });
         const contextData = `${contextJSON.type || 'Unknown'} chunk.`;
 
         const languagePrompt = AgentPrompts.createLanguagePrompt(contextData, chunk);
