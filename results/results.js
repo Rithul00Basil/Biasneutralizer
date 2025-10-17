@@ -310,7 +310,7 @@
       }
       lastRenderedTs = analysisData.timestamp || Date.now();
       console.log('[DEBUG] refreshResults: analysisData is valid. Calling render().');
-      renderWhenVisible(() => render(analysisData));
+      renderWhenVisible(async () => await render(analysisData));
     } catch (e) {
       console.error('[DEBUG] refreshResults: A critical error occurred!', e);
       console.error('[BiasNeutralizer Results] Failed to load results:', e);
@@ -334,11 +334,11 @@
   // ========================================
   // RENDER
   // ========================================
-  function render(data) {
+  async function render(data) {
     console.log('[DEBUG] render: Function started with data:', data);
     console.log('[BiasNeutralizer Results] ===== RENDERING ANALYSIS =====');
     console.log('[BiasNeutralizer Results] Raw data:', data);
-    
+
     const { url, title, summary, source, timestamp, raw } = sanitizeAnalysisData(data);
     
     console.log('[BiasNeutralizer Results] Sanitized data:');
@@ -405,6 +405,17 @@
     const tribunal = raw && raw.tribunalDebate ? raw.tribunalDebate : null;
     renderTribunalVerdictsV2(tribunal);
     renderStructuralAnalysis(tribunal && tribunal.verifiedFacts ? tribunal.verifiedFacts : null);
+
+    // Conditionally show API footer only for on-device mode
+    const { assistantModel } = await storageGet(['assistantModel']);
+    const apiFooter = document.querySelector('.api-footer');
+    if (apiFooter) {
+      if (assistantModel === 'on-device' || !assistantModel) {
+        apiFooter.style.display = 'block';
+      } else {
+        apiFooter.style.display = 'none';
+      }
+    }
 
     // Reveal main content after successful render
     console.log('[DEBUG] render: All rendering logic complete. Hiding loading state.');

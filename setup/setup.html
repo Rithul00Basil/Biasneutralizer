@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BiasNeutralizer Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+  <link rel="stylesheet" href="setup.css" />
+</head>
+<body>
+  <div class="panel-container setup-container">
+    <!-- Header -->
+    <div class="panel-header">
+      <div class="header-content">
+        <h1 class="product-name">
+          <span class="bias">Bias</span><span class="neutralizer">Neutralizer</span>
+        </h1>
+        <p class="subtitle">Welcome! Let's Get You Set Up</p>
+      </div>
+      <div class="header-icon">
+        <img src="../assets/logo.svg" alt="BiasNeutralizer Logo" />
+      </div>
+    </div>
+
+    <!-- Setup Introduction -->
+    <div class="setup-intro">
+      <p class="intro-text">
+        BiasNeutralizer can run AI analysis locally on your device for privacy and speed, 
+        or use cloud models for more powerful analysis.
+      </p>
+    </div>
+
+    <!-- On-Device Option Card -->
+    <div class="setup-card" id="on-device-card">
+      <div class="card-background"></div>
+      <div class="card-content setup-card-content">
+        <div class="setup-option-header">
+          <div class="option-icon">🔒</div>
+          <h2 class="option-title">Download On-Device AI Model</h2>
+          <span class="recommended-badge">Recommended</span>
+        </div>
+        
+        <p class="option-description">
+          Private, fast, works offline. Requires ~22GB disk space.
+        </p>
+
+        <div class="device-requirements" id="device-requirements">
+          <p class="requirements-title">Requirements:</p>
+          <ul class="requirements-list">
+            <li>22GB free disk space</li>
+            <li>4GB+ GPU or 16GB+ RAM</li>
+            <li>Chrome 127+ (Built-in AI support)</li>
+          </ul>
+        </div>
+
+        <div class="setup-status" id="setup-status" style="display: none;">
+          <div class="status-message" id="status-message">Checking device compatibility...</div>
+          <div class="progress-container" id="progress-container" style="display: none;">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-text" id="progress-text">0%</div>
+          </div>
+        </div>
+
+        <button class="primary-button setup-button" id="download-model-button">
+          <span id="download-button-text">Download Model</span>
+        </button>
+        
+        <button class="secondary-button setup-button" id="cancel-download-button" style="display: none;">
+          Cancel & Use Cloud
+        </button>
+      </div>
+    </div>
+
+    <!-- Cloud Option Card -->
+    <div class="setup-card">
+      <div class="card-background"></div>
+      <div class="card-content setup-card-content">
+        <div class="setup-option-header">
+          <div class="option-icon">☁️</div>
+          <h2 class="option-title">Use Cloud Models</h2>
+        </div>
+        
+        <p class="option-description">
+          More powerful analysis, requires API key and internet connection.
+        </p>
+
+        <ul class="cloud-features">
+          <li>✓ Access to latest models</li>
+          <li>✓ More detailed analysis</li>
+          <li>✓ No disk space required</li>
+          <li>⚠ Requires Gemini API key</li>
+        </ul>
+
+        <button class="secondary-button setup-button" id="skip-cloud-button">
+          Skip & Use Cloud
+        </button>
+      </div>
+    </div>
+
+    <!-- Support Message -->
+    <div class="setup-footer">
+      <p class="footer-note">
+        You can change your AI preference later in Settings
+      </p>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification-toast">
+      <span></span>
+    </div>
+  </div>
+
+  <script src="setup.js" type="module"></script>
+</body>
+</html>

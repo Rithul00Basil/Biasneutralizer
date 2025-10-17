@@ -3,7 +3,30 @@
  * Manages article scanning, AI analysis, and user interactions
  */
 import { AgentPrompts } from '../shared/prompts.js';
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // === STEP 1: CHECK SETUP COMPLETION (FIRST-TIME SETUP FLOW) ===
+  console.log('[BiasNeutralizer] Checking setup completion...');
+  
+  try {
+    const storage = await new Promise((resolve) => {
+      chrome.storage.local.get(['hasCompletedSetup'], (result) => {
+        resolve(result);
+      });
+    });
+
+    // If setup not completed, redirect to setup page
+    if (!storage.hasCompletedSetup) {
+      console.log('[BiasNeutralizer] Setup not completed, redirecting to setup page');
+      window.location.href = chrome.runtime.getURL('setup/setup.html');
+      return; // Stop execution
+    }
+
+    console.log('[BiasNeutralizer] Setup completed, continuing with normal flow');
+  } catch (error) {
+    console.error('[BiasNeutralizer] Error checking setup status:', error);
+    // On error, continue with normal flow (fail-safe)
+  }
+
   // === sidepanel rating validation + model label helpers ===
    function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);

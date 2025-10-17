@@ -2000,6 +2000,25 @@ body {
   background: transparent;
 }
 
+/* ===== API FOOTER - Chrome Built-in AI Badge Display ===== */
+footer.api-footer {
+  padding: 1rem;
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.api-footer-title {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-white-80);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.api-badges {
+  display: none;
+}
+
 /* ===== Results Modal Styles ===== */
 #results-modal-container {
   position: fixed;

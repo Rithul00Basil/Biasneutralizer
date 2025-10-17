@@ -169,10 +169,12 @@
   </a>
 </div>
 
-<!-- Notification Toast -->
-<div id="notification-toast">
-  <span></span>
-</div>
+<!-- API Footer - Visible in sidepanel -->
+<footer class="api-footer">
+  <div class="api-footer-title">Powered by Chrome Built-in AI (Prompt API, Summarizer API, Rewriter API)</div>
+</footer>
+
+<!-- Animation Container (inside panel-container for CSS selector to work) -->
 <div id="animation-container">
   <button id="cancel-scan-button" class="cancel-button">&times;</button>
   <div class="bn-scanner">
@@ -195,8 +197,16 @@
     <span class="bn-wave"></span>
     <span class="bn-wave"></span>
   </div>
-  <p id="scan-status-text" class="scan-status">Initializing scan...</p>
-</div>  
+  <div id="scan-status-text" class="scan-status">Initializing scan...</div>
+</div>
+
+</div>
+<!-- End of panel-container -->
+
+<!-- Notification Toast -->
+<div id="notification-toast">
+  <span></span>
+</div>
 <script src="sidepanel.js" type="module"></script>
 </body>
 </html>

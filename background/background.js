@@ -134,12 +134,54 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
   throw lastErr;
 }
 
+// Listen for extension installation
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    console.log('[BiasNeutralizer] Extension installed, initializing first-time setup');
+    // Set hasCompletedSetup to false on first install
+    chrome.storage.local.set({
+      hasCompletedSetup: false,
+      aiPreference: null,
+    }, () => {
+      console.log('[BiasNeutralizer] First-time setup flags initialized');
+    });
+  } else if (details.reason === 'update') {
+    console.log('[BiasNeutralizer] Extension updated to version', chrome.runtime.getManifest().version);
+  }
+});
+
 // Listen for extension icon clicks and open side panel
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
-  chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
-    console.warn('[BiasNeutralizer] Failed to open side panel:', error);
-  });
+
+  // Check if setup has been completed
+  try {
+    const storage = await new Promise((resolve) => {
+      chrome.storage.local.get(['hasCompletedSetup'], (result) => {
+        resolve(result);
+      });
+    });
+
+    console.log('[BiasNeutralizer] Setup status:', storage);
+
+    // If setup not completed, open setup page instead of side panel
+    if (!storage.hasCompletedSetup) {
+      console.log('[BiasNeutralizer] Setup not completed, opening setup page');
+      chrome.tabs.create({ url: chrome.runtime.getURL('setup/setup.html') });
+      return;
+    }
+
+    // Setup completed, open side panel normally
+    chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
+      console.warn('[BiasNeutralizer] Failed to open side panel:', error);
+    });
+  } catch (error) {
+    console.error('[BiasNeutralizer] Error checking setup status:', error);
+    // On error, try to open side panel anyway
+    chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+      console.warn('[BiasNeutralizer] Failed to open side panel:', err);
+    });
+  }
 });
 
 // Main message listener for side panel communication

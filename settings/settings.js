@@ -450,7 +450,17 @@
     const finish = setButtonWorking(button, 'Applying...');
 
     try {
-      const settingsPayload = { analysisDepth: state.analysisDepth, assistantModel: state.assistantModel, geminiApiKey: state.savedApiKey || '' };
+      // Sync aiPreference with assistantModel for setup flow compatibility
+      const aiPreference = state.assistantModel === 'on-device' ? 'on-device' : 'cloud';
+      const privateMode = state.assistantModel === 'on-device';
+      
+      const settingsPayload = { 
+        analysisDepth: state.analysisDepth, 
+        assistantModel: state.assistantModel, 
+        aiPreference: aiPreference,
+        privateMode: privateMode,
+        geminiApiKey: state.savedApiKey || '' 
+      };
       const ok = await storageSet({ settings: settingsPayload, ...settingsPayload });
       if (!ok) throw new Error('storageSet failed');
       showFeedback(elements.advancedFeedback, 'Preferences applied.', 'success');

@@ -36,7 +36,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["results/results.html"],
+      "resources": ["results/results.html", "setup/setup.html"],
       "matches": ["<all_urls>"]
     }
   ],
