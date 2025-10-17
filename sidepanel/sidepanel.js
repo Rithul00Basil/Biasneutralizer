@@ -429,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Persists the latest analysis results for later viewing
    */
-  async function saveAnalysisResults(analysisData, source, articleInfo) {
+  async function saveAnalysisResults(analysisData, source, articleInfo, reportId) {
     if (!validateChromeAPI()) {
       showError('Cannot save analysis results: Chrome APIs unavailable');
       return;
@@ -445,6 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
       showError('Cannot save results: Invalid analysis data');
       return;
     }
+
+    const finalReportId = reportId || Date.now();
 
     console.log('[BiasNeutralizer] ===== SAVING ANALYSIS RESULTS =====');
     console.log('[BiasNeutralizer] analysisData type:', typeof analysisData);
@@ -465,17 +467,18 @@ document.addEventListener('DOMContentLoaded', () => {
     normalized = normalizeModeratorSections(normalized);
 
     const resultToStore = {
+      id: finalReportId, // Add unique ID for history
       summary: normalized, // always a string
       source: source,
       url: articleInfo.url || '',
       title: articleInfo.title || 'Untitled Article',
-      timestamp: Date.now(),
+      timestamp: finalReportId,
       raw: {
         analysis: analysisData,
         source: source,
         contentLength: articleInfo.fullText?.length || 0,
         paragraphCount: articleInfo.paragraphs?.length || 0,
-        fullText: articleInfo.fullText || '', 
+        fullText: articleInfo.fullText || '',
         timestamp: Date.now()
       },
     };
@@ -486,8 +489,19 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[BiasNeutralizer] resultToStore.raw:', resultToStore.raw);
     console.log('[BiasNeutralizer] Full resultToStore:', JSON.stringify(resultToStore, null, 2));
 
-    const stored = await safeStorageSet({ lastAnalysis: resultToStore });
-    
+    // Read existing history
+    const storage = await safeStorageGet(['analysisHistory']);
+    const analysisHistory = Array.isArray(storage?.analysisHistory) ? storage.analysisHistory : [];
+
+    // Prepend new report to history
+    const updatedHistory = [resultToStore, ...analysisHistory];
+
+    // Save both history and lastAnalysis
+    const stored = await safeStorageSet({
+      analysisHistory: updatedHistory,
+      lastAnalysis: resultToStore
+    });
+
     if (!stored) {
       showError(
         'Failed to save analysis results.',
@@ -495,6 +509,10 @@ document.addEventListener('DOMContentLoaded', () => {
       );
       return;
     }
+
+    sessionStorage.setItem('viewReportId', finalReportId);
+
+    console.log('[BiasNeutralizer] Analysis saved to history with ID:', resultToStore.id);
 
     if (elements.resultsModalContainer) {
       elements.resultsModalContainer.classList.remove('modal-hidden');
@@ -529,17 +547,42 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const summarizer = await Summarizer.create({
-  type: 'key-points',
-  format: 'markdown',
-  length: 'short' // Changed from 'long' to 'short' for speed
-});
+        type: 'key-points',
+        format: 'markdown',
+        length: 'short' // Changed from 'long' to 'short' for speed
+      });
 
-      const summaryMarkdown = await summarizer.summarize(
-  articleContent.fullText.slice(0, 6000),  // Only first 6k chars for speed
-  {
-    context: 'Generate concise key points for a news article. 3-5 bullet points maximum.'
-  }
-);
+      const fullText = articleContent.fullText || '';
+      let summaryMarkdown = '';
+      if (fullText.length > 5000) {
+        // Chunk if >5k chars
+        const chunks = fullText.match(/.{1,2000}/g); // Rough chunking
+        let chunkSummaries = [];
+        for (const chunk of chunks) {
+          const chunkSummary = await summarizer.summarize(
+            chunk,
+            {
+              context: 'Generate concise key points for a news article chunk. 2-3 bullet points maximum.'
+            }
+          );
+          chunkSummaries.push(chunkSummary);
+        }
+        // Optionally, summarize the summaries for a final summary
+        const combinedSummary = chunkSummaries.join('\n');
+        summaryMarkdown = await summarizer.summarize(
+          combinedSummary,
+          {
+            context: 'Combine and condense the following bullet points into a concise summary for a news article. 3-5 bullet points maximum.'
+          }
+        );
+      } else {
+        summaryMarkdown = await summarizer.summarize(
+          fullText.slice(0, 6000),  // Only first 6k chars for speed
+          {
+            context: 'Generate concise key points for a news article. 3-5 bullet points maximum.'
+          }
+        );
+      }
 
       // Save the successful summary
       await safeStorageSet({ lastSummary: { status: 'complete', data: summaryMarkdown } });
@@ -554,7 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Scans article using on-device AI with a "chunking" strategy to handle large texts.
    */
-  async function scanWithOnDeviceAI(articleContent) {
+  async function scanWithOnDeviceAI(articleContent, tabId) {
     if (state.isScanning) {
       console.warn('[BiasNeutralizer] Scan already in progress');
       return;
@@ -618,6 +661,28 @@ document.addEventListener('DOMContentLoaded', () => {
       const chunkAnalyses = await Promise.all(analysisPromises);
       console.log(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
 
+      // --- Aggregate highlight data from all chunks ---
+      console.log("--- Aggregating Highlight Data ---");
+      const allLoadedPhrases = [];
+      const allBalancedElements = [];
+      
+      chunkAnalyses.forEach((chunkResult) => {
+        // Aggregate loaded phrases from language analysis
+        if (chunkResult.language && Array.isArray(chunkResult.language.loaded_phrases)) {
+          allLoadedPhrases.push(...chunkResult.language.loaded_phrases);
+        }
+        
+        // Aggregate balanced elements from skeptic analysis
+        if (chunkResult.skeptic && Array.isArray(chunkResult.skeptic.balanced_elements)) {
+          allBalancedElements.push(...chunkResult.skeptic.balanced_elements);
+        }
+      });
+      
+      console.log('[BiasNeutralizer] Aggregated phrases:', {
+        biasedCount: allLoadedPhrases.length,
+        neutralCount: allBalancedElements.length
+      });
+
       // --- Synthesize the results from all chunks ---
       console.log("--- Synthesizing Final Report ---");
       const synthesizerPrompt = AgentPrompts.createSynthesizerPrompt(JSON.stringify(chunkAnalyses, null, 2));
@@ -628,12 +693,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
       await session.destroy();
 
+      // --- Save to history ---
+      console.log("--- Saving to Analysis History ---");
+      const reportId = Date.now();
+      
+      // Call saveAnalysisResults with reportId
+      await saveAnalysisResults(analysisResult, 'on-device (chunked)', articleContent, reportId);
+
+      // --- Send highlighting data to content script ---
+      const hasBiasedPhrases = allLoadedPhrases.length > 0;
+      const hasNeutralPhrases = allBalancedElements.length > 0;
+      
+      if ((hasBiasedPhrases || hasNeutralPhrases) && tabId) {
+        try {
+          await chrome.tabs.sendMessage(tabId, {
+            type: 'HIGHLIGHT_DATA',
+            biasedPhrases: allLoadedPhrases,
+            neutralPhrases: allBalancedElements
+          });
+          console.log('[BiasNeutralizer] Highlight data sent to content script:', {
+            biasedCount: allLoadedPhrases.length,
+            neutralCount: allBalancedElements.length
+          });
+        } catch (error) {
+          console.warn('[BiasNeutralizer] Failed to send highlight data:', error);
+        }
+      }
+
       stopStatusUpdates();
       setView('default');
       state.isScanning = false;
       elements.scanButton.disabled = false;
-
-      await saveAnalysisResults(analysisResult, 'on-device (chunked)', articleContent);
 
     } catch (error) {
       console.error("On-device chunked scan failed:", error);
@@ -768,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (settings.privateMode) {
-      await scanWithOnDeviceAI(articleContent);
+      await scanWithOnDeviceAI(articleContent, activeTab.id);
     } else {
       scanWithCloudAI(articleContent);
     }
@@ -856,16 +946,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('[BiasNeutralizer] Failed to open settings:', error);
       showError('Failed to open settings page.');
     }
-  }
-
-  /**
-   * Opens help page
-   */
-  function handleHelpClick() {
-    console.log('[BiasNeutralizer] Opening help page');
-    
-    // Navigate to the help page
-    window.location.href = '../help/help.html';
   }
 
   // ========================================
@@ -963,10 +1043,35 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Help button
+      // Reports button - opens reports page in new tab
+      if (target.closest('#reports-button')) {
+        event.preventDefault();
+        if (!validateChromeAPI()) {
+          showError('Cannot open reports page: Chrome APIs unavailable');
+          return;
+        }
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL('reports/reports.html') });
+        } catch (error) {
+          console.error('[BiasNeutralizer] Failed to open reports page:', error);
+          showError('Failed to open reports page.');
+        }
+        return;
+      }
+
+      // Help button - opens help page in new tab
       if (target.closest('#help-button')) {
         event.preventDefault();
-        handleHelpClick();
+        if (!validateChromeAPI()) {
+          showError('Cannot open help page: Chrome APIs unavailable');
+          return;
+        }
+        try {
+          chrome.tabs.create({ url: chrome.runtime.getURL('help/help.html') });
+        } catch (error) {
+          console.error('[BiasNeutralizer] Failed to open help page:', error);
+          showError('Failed to open help page.');
+        }
         return;
       }
 
@@ -976,7 +1081,13 @@ document.addEventListener('DOMContentLoaded', () => {
           showError('Cannot open results page: Chrome APIs unavailable');
           return;
         }
-        chrome.tabs.create({ url: chrome.runtime.getURL('results/results.html') });
+        
+        // Get the reportId from sessionStorage and pass it via URL parameter
+        const reportId = sessionStorage.getItem('viewReportId');
+        const baseUrl = chrome.runtime.getURL('results/results.html');
+        const url = reportId ? `${baseUrl}?reportId=${reportId}` : baseUrl;
+        
+        chrome.tabs.create({ url: url });
         return;
       }
 

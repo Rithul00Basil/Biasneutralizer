@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analysis History - BiasNeutralizer</title>
+  <link rel="stylesheet" href="reports.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="reports-container">
+    <header class="reports-header">
+      <div class="header-top">
+        <button class="back-button" id="back-button" aria-label="Go back to side panel">
+          <span class="back-icon">←</span>
+          <span>Back</span>
+        </button>
+        <div class="header-branding">
+          <div class="header-icon"><img src="../icons/icon48.png" alt="BiasNeutralizer" /></div>
+          <h1 class="header-title">Analysis History</h1>
+        </div>
+        <div class="header-actions">
+          <input type="search" id="search-input" class="search-input" placeholder="Search reports..." aria-label="Search reports by title, URL, or source" />
+          <button class="action-button" id="export-button" aria-label="Export all reports as JSON">
+            <span class="button-icon">💾</span>
+            <span class="button-label">Export</span>
+          </button>
+          <button class="sort-button" id="sort-button" aria-label="Toggle sort order">
+            <span class="sort-icon">⇅</span>
+            <span class="sort-label">Newest First</span>
+          </button>
+        </div>
+      </div>
+      <div class="reports-stats" id="reports-stats">
+        <div class="stat-item">
+          <span class="stat-value" id="total-reports">0</span>
+          <span class="stat-label">Total Reports</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-value" id="this-week">0</span>
+          <span class="stat-label">This Week</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-value" id="storage-used">0 KB</span>
+          <span class="stat-label">Storage Used</span>
+        </div>
+      </div>
+    </header>
+    <main class="reports-main">
+      <div class="reports-list-container">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">📊</div>
+          <h2 class="empty-title">No Analysis Reports Yet</h2>
+          <p class="empty-description">Your analysis history will appear here. Start by analyzing an article from the side panel.</p>
+        </div>
+        <div class="reports-list hidden" id="reports-list">
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="reports.js"></script>
+</body>
+</html>

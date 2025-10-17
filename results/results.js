@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   'use strict';
 
   // ========================================
@@ -29,6 +29,38 @@
       targetElement.innerHTML = '';
       targetElement.appendChild(ul);
     }
+  }
+
+  // Enhanced loadAndRenderSummary with timeout/fallback
+  async function loadAndRenderSummary(targetElement, maxWaitMs = 30000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      const { lastSummary } = await storageGet(['lastSummary']);
+      if (lastSummary?.status === 'complete') {
+        // Render as before...
+        const summaryMarkdown = lastSummary.data;
+        const keyPoints = summaryMarkdown.split('- ').filter(p => p.trim().length > 0);
+        const ul = document.createElement('ul');
+        keyPoints.forEach(pointText => {
+          const li = document.createElement('li');
+          li.textContent = pointText.trim();
+          ul.appendChild(li);
+        });
+        targetElement.innerHTML = '';
+        targetElement.appendChild(ul);
+        return;
+      } else if (lastSummary?.status === 'error') {
+        targetElement.innerHTML = `<p class="placeholder-text error-text">Summary failed: ${lastSummary.data}. Using quick extract...</p>`;
+        // Fallback: Extract first 3 paras from stored content
+        const { lastAnalysis } = await storageGet(['lastAnalysis']);
+        const fallbackText = lastAnalysis?.paragraphs?.slice(0, 3).join(' ').substring(0, 200) + '...';
+        targetElement.innerHTML += `<p>${fallbackText}</p>`;
+        return;
+      }
+      await new Promise(r => setTimeout(r, 1000)); // Poll every 1s
+    }
+    // Timeout: Simple JS fallback
+    targetElement.innerHTML = '<p class="placeholder-text">Summary timed out. Quick extract:</p><ul><li>Key topic: Based on headlines.</li></ul>';
   }
 
   // ========================================
@@ -93,10 +125,10 @@
   function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
     let out = String(markdown || '')
-      .replace(/\\[RATING\\]\\s*:/gi, 'Rating:')
-      .replace(/\\[CONFIDENCE\\]\\s*:/gi, 'Confidence:');
+      .replace(/\[RATING\]\s*:/gi, 'Rating:')
+      .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
 
-    out = out.replace(/(Rating:\\s*)([^\\n]+)/i, (m, p1, p2) => {
+    out = out.replace(/(Rating:\s*)([^\n]+)/i, (m, p1, p2) => {
       let r = String(p2 || '').trim();
       const map = { 'Unknown':'Unclear', 'Left':'Lean Left', 'Right':'Lean Right', 'Centre':'Center' };
       r = map[r] || r;
@@ -104,20 +136,20 @@
       return p1 + r;
     });
 
-    if (!/Confidence:\\s*/i.test(out)) out += '\\nConfidence: Medium';
-    out = out.replace(/(Confidence:\\s*)([^\\n]+)/i, (m, p1, p2) => {
+    if (!/Confidence:\s*/i.test(out)) out += '\nConfidence: Medium';
+    out = out.replace(/(Confidence:\s*)([^\n]+)/i, (m, p1, p2) => {
       let c = String(p2 || '').trim();
       if (!['High','Medium','Low'].includes(c)) c = 'Medium';
       return p1 + c;
     });
 
-    if (!/^\\s*##\\s*Overall Bias Assessment/im.test(out)) {
-      out = '## Overall Bias Assessment\\n' + out;
+    if (!/^\s*##\s*Overall Bias Assessment/im.test(out)) {
+      out = '## Overall Bias Assessment\n' + out;
     }
 
     // If missing a canonical Rating line, derive it from Overall Bias Assessment
-    if (!/^\\s*Rating:/im.test(out)) {
-      const m = out.match(/Overall Bias Assessment\\**\\s*:\\s*([^\\n]+)/i);
+    if (!/^\s*Rating:/im.test(out)) {
+      const m = out.match(/Overall Bias Assessment\*\*\s*:\s*([^\n]+)/i);
       if (m && m[1]) {
         let r = m[1].trim();
         const map = {
@@ -130,7 +162,7 @@
         };
         r = map[r] || r;
         if (!allowed.has(r)) r = 'Unclear';
-        out = out.replace(/(##\\s*Overall Bias Assessment[^\\n]*\\n?)/i, $1Rating: \\n);
+        out = out.replace(/(##\s*Overall Bias Assessment[^\n]*\n?)/i, '$1Rating: \n');
       }
     }
     return out;
@@ -237,42 +269,62 @@
   // REFRESH RESULTS
   // ========================================
   async function refreshResults() {
+    console.log('[DEBUG] refreshResults: Function started.');
+    // Read reportId from URL parameter instead of sessionStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewReportId = urlParams.get('reportId');
+    console.log('[DEBUG] refreshResults: Retrieved viewReportId from URL parameter:', viewReportId);
     if (els.loadingState) els.loadingState.classList.remove('hidden');
     if (els.mainContent) els.mainContent.classList.add('hidden');
     
     try {
-      const { lastAnalysis } = await storageGet(['lastAnalysis']);
+      let analysisData = null;
+      const { lastAnalysis, analysisHistory = [] } = await storageGet(['lastAnalysis', 'analysisHistory']);
+      console.log('[DEBUG] refreshResults: Fetched data from storage.', { lastAnalysis, analysisHistory });
       console.log('[BiasNeutralizer Results] ===== LOADING ANALYSIS =====');
       console.log('[BiasNeutralizer Results] lastAnalysis:', lastAnalysis);
-      
-      // keep loading visible until render completes
-      
-      if (!lastAnalysis || typeof lastAnalysis !== 'object') {
+
+      if (viewReportId) {
+        console.log('[BiasNeutralizer Results] Loading specific report ID:', viewReportId);
+        analysisData = analysisHistory.find(r => String(r.id) === String(viewReportId)) || null;
+      }
+
+      if (!analysisData) {
+        console.log('[BiasNeutralizer Results] No specific report ID found, falling back to lastAnalysis.');
+        analysisData = lastAnalysis || null;
+      }
+
+      console.log('[DEBUG] refreshResults: Final analysisData object to be rendered:', analysisData);
+
+      if (!analysisData || typeof analysisData !== 'object') {
+        console.error('[DEBUG] refreshResults: ABORTING. analysisData is invalid. Calling renderEmpty().');
         console.warn('[BiasNeutralizer Results] No valid analysis found');
         if (els.loadingState) els.loadingState.classList.add('hidden');
         if (els.mainContent) els.mainContent.classList.remove('hidden');
         renderEmpty();
         return;
       }
-      if (lastAnalysis.timestamp && lastAnalysis.timestamp === lastRenderedTs) {
+      if (analysisData.timestamp && analysisData.timestamp === lastRenderedTs) {
         console.log('[BiasNeutralizer Results] No change since last render.');
         return;
       }
-      lastRenderedTs = lastAnalysis.timestamp || Date.now();
-      renderWhenVisible(() => render(lastAnalysis));
+      lastRenderedTs = analysisData.timestamp || Date.now();
+      console.log('[DEBUG] refreshResults: analysisData is valid. Calling render().');
+      renderWhenVisible(() => render(analysisData));
     } catch (e) {
+      console.error('[DEBUG] refreshResults: A critical error occurred!', e);
       console.error('[BiasNeutralizer Results] Failed to load results:', e);
-      if (els.loadingState) els.loadingState.classList.add('hidden');
-      if (els.mainContent) els.mainContent.classList.remove('hidden');
-      renderEmpty();
+      if (els.loadingState) {
+        els.loadingState.innerHTML = '<div class="loading-text" style="color: #EF4444;">Error during loading. Check console.</div>';
+      }
     }
   }
 
   function renderEmpty() {
     els.title.textContent = 'No analysis yet';
     els.title.href = '#';
-    els.domain.textContent = 'Ã¢â‚¬â€';
-    els.time.textContent = 'Ã¢â‚¬â€';
+    els.domain.textContent = '—';
+    els.time.textContent = '—';
     els.source.hidden = true;
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
@@ -283,6 +335,7 @@
   // RENDER
   // ========================================
   function render(data) {
+    console.log('[DEBUG] render: Function started with data:', data);
     console.log('[BiasNeutralizer Results] ===== RENDERING ANALYSIS =====');
     console.log('[BiasNeutralizer Results] Raw data:', data);
     
@@ -295,8 +348,16 @@
     const domain = safeDomain(url);
     els.title.textContent = title || (domain ? `Article on ${domain}` : 'Article');
     els.title.href = url || '#';
-    els.domain.textContent = domain || 'Ã¢â‚¬â€';
-    els.time.textContent = timestamp ? formatTime(timestamp) : 'Ã¢â‚¬â€';
+    // Make link open in new tab with security
+    if (url) {
+      els.title.target = '_blank';
+      els.title.rel = 'noopener noreferrer';
+    } else {
+      els.title.removeAttribute('target');
+      els.title.removeAttribute('rel');
+    }
+    els.domain.textContent = domain || '—';
+    els.time.textContent = timestamp ? formatTime(timestamp) : '—';
     if (source) { 
       els.source.textContent = source; 
       els.source.hidden = false; 
@@ -312,7 +373,7 @@
     }
     
     let md = normalizeModeratorSections(summaryText);
-    if (md.length > 200000) md = md.slice(0, 200000) + '\n\nÃ¢â‚¬Â¦';
+    if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
 
     parseAndRenderAnalysis(md, raw);
 
@@ -346,6 +407,7 @@
     renderStructuralAnalysis(tribunal && tribunal.verifiedFacts ? tribunal.verifiedFacts : null);
 
     // Reveal main content after successful render
+    console.log('[DEBUG] render: All rendering logic complete. Hiding loading state.');
     try {
       els.loadingState?.classList.add('hidden');
       els.mainContent?.classList.remove('hidden');
@@ -587,7 +649,7 @@
       }
       
       if (currentSection) {
-        const bulletMatch = trimmed.match(/^[-Ã¢â‚¬Â¢*]\s+(.+)$/);
+        const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
         if (bulletMatch) {
           currentItems.push(bulletMatch[1].trim());
         } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
@@ -627,7 +689,7 @@
       examples = raw.languageAnalysis.slice(0, 5);
     } else {
       examples = items.slice(0, 5).map(item => {
-        const arrowMatch = item.match(/["'](.+?)["']\s*[Ã¢â€ â€™'-]\s*(.+)/);
+        const arrowMatch = item.match(/["'](.+?)["']\s*[→'-]\s*(.+)/);
         if (arrowMatch) {
           return {
             phrase: arrowMatch[1],
@@ -729,7 +791,7 @@
         
         const prosecutorTitle = document.createElement('div');
         prosecutorTitle.className = 'tribunal-section-title';
-        prosecutorTitle.textContent = 'Ã¢Å¡Â¡ Prosecutor\'s Evidence';
+        prosecutorTitle.textContent = '⚡ Prosecutor\'s Evidence';
         prosecutorSection.appendChild(prosecutorTitle);
         
         const evidenceList = document.createElement('ul');
@@ -751,7 +813,7 @@
         
         const defenseTitle = document.createElement('div');
         defenseTitle.className = 'tribunal-section-title';
-        defenseTitle.textContent = 'Ã°Å¸â€ºÂ¡Ã¯Â¸Â Defense\'s Rebuttal';
+        defenseTitle.textContent = 'ðŸ›¡ï¸ Defense\'s Rebuttal';
         defenseSection.appendChild(defenseTitle);
         
         const rebuttalContent = document.createElement('p');
@@ -780,7 +842,7 @@
         
         const investigatorTitle = document.createElement('div');
         investigatorTitle.className = 'tribunal-section-title';
-        investigatorTitle.textContent = 'Ã°Å¸â€Â¬ Investigator\'s Facts';
+        investigatorTitle.textContent = 'ðŸ”¬ Investigator\'s Facts';
         investigatorSection.appendChild(investigatorTitle);
         
         const factsContent = document.createElement('p');
@@ -887,7 +949,7 @@
         const jb = document.createElement('div');
         jb.className = 'tribunal-section-content';
         const ruling = verdict.ruling ? `<strong>${verdict.ruling}</strong>` : '';
-        const reasoning = verdict.reasoning ? ` Ã¢â‚¬â€ ${verdict.reasoning}` : '';
+        const reasoning = verdict.reasoning ? ` — ${verdict.reasoning}` : '';
         jb.innerHTML = `${ruling}${reasoning}`;
         judge.appendChild(jb);
         wrap.appendChild(judge);
@@ -991,39 +1053,85 @@
 
   async function handleOnDeviceAssistant(userInput, messageElement) {
     try {
-      const availability = await window.ai.languageModel.availability();
-      if (availability !== 'available') {
-        throw new Error(`On-device model not available. Status: ${availability}`);
+      // Feature detection
+      if (!('LanguageModel' in self)) {
+        throw new Error('On-device AI is not supported in this browser. Please update Chrome or enable the feature flag.');
       }
 
-      const session = await window.ai.languageModel.create();
+      // Check availability
+      const availability = await self.LanguageModel.availability();
+      if (availability === 'no') {
+        throw new Error('On-device model is not available on this device.');
+      }
+      if (availability === 'after-download') {
+        messageElement.classList.remove('typing-indicator');
+        messageElement.textContent = 'Downloading language model... This may take a moment.';
+      }
+
+      // Create session (safe in user-activated event handler)
+      const session = await self.LanguageModel.create({
+        systemPrompt: 'You are a professional news bias analysis assistant. Answer questions clearly and concisely based ONLY on the analysis data provided. If information is not in the context, say so. Use simple markdown formatting.'
+      });
+
+      // Prepare context
       const { lastAnalysis } = await storageGet(['lastAnalysis']);
       const analysisContext = JSON.stringify(lastAnalysis, null, 2);
 
-      const systemPrompt = `You are a helpful assistant for the BiasNeutralizer app. Your answers MUST be based *only* on the JSON analysis data provided below. Do not invent information. If the user asks something not in the context, say so.
+      // Build context with conversation history
+      let contextPrompt = `ANALYSIS DATA:\n${analysisContext}\n\n--- Recent Conversation ---\n`;
+      if (conversationHistory.length > 1) {
+        // Include last 3 exchanges for context
+        const recentHistory = conversationHistory.slice(-6);
+        contextPrompt += recentHistory
+          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts[0].text}`)
+          .join('\n');
+        contextPrompt += '\n';
+      }
+      contextPrompt += `User: ${userInput}\nAssistant:`;
 
-ANALYSIS CONTEXT:
-${analysisContext}`;
+      // Stream the response
+      messageElement.classList.remove('typing-indicator');
+      messageElement.textContent = '';
+      let fullResponseText = '';
 
-      const fullPrompt = `${systemPrompt}\n\n--- Conversation History ---\n${conversationHistory
-        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts[0].text}`)
-        .join('\n')}\nUser: ${userInput}\nAssistant:`;
+      const stream = session.promptStreaming(contextPrompt);
+      
+      for await (const chunk of stream) {
+        fullResponseText = chunk.trim();
+        
+        // Convert markdown to HTML for display
+        const markdownToHtml = (text) => {
+          let html = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/^- (.*$)/gm, '<li>$1</li>')
+            .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+          return html;
+        };
+        
+        const dirtyHtml = markdownToHtml(fullResponseText);
+        messageElement.innerHTML = (window.DOMPurify
+          ? DOMPurify.sanitize(dirtyHtml, { ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br'], ALLOWED_ATTR: [] })
+          : dirtyHtml
+        );
+        
+        // Auto-scroll to bottom
+        els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
+      }
 
-      const responseText = await session.prompt(fullPrompt);
+      // Cleanup
       await session.destroy();
 
-      messageElement.classList.remove('typing-indicator');
-      const formattedHtml = responseText
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>');
-      messageElement.innerHTML = DOMPurify.sanitize(formattedHtml, { ALLOWED_TAGS: ['strong', 'em', 'p', 'br'] });
-
-      conversationHistory.push({ role: 'model', parts: [{ text: responseText }] });
+      // Save to conversation history
+      conversationHistory.push({ role: 'model', parts: [{ text: fullResponseText }] });
 
     } catch (error) {
       console.error("On-device assistant error:", error);
       messageElement.classList.remove('typing-indicator');
-      messageElement.textContent = `Sorry, the on-device assistant failed: ${error.message}`;
+      messageElement.textContent = `Sorry, the on-device assistant encountered an error: ${error.message}`;
     }
   }
 

@@ -1,4 +1,4 @@
-function extractMainContent() {
+﻿function extractMainContent() {
   const contentSelectors = [
     'article', '[role="main"]', 'main', '.article-content',
     '.post-content', '#content', '.entry-content'

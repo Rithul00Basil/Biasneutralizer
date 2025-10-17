@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BiasNeutralizer Background Service Worker
  * Manages cloud-based AI analysis with multi-agent system
  */
@@ -422,7 +422,7 @@ Task: Classify genre and extract context. If uncertain, use "Unknown" rather tha
 
 Definitions:
 - News: Timely reporting, minimal opinion
-- Opinion: Explicit viewpoint/commentary (op-ed, column, editorial, first‑person)
+- Opinion: Explicit viewpoint/commentary (op-ed, column, editorial, first-person)
 - Analysis: Explains significance with interpretation, not straight reporting
 - Satire: Humor/irony, not literal
 - Academic: Scholarly, citations, formal
@@ -433,7 +433,7 @@ Rules:
 - Detect opinion/analysis markers in headers/bylines (e.g., "Opinion", "Analysis", "Column")
 - Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
 - Estimate quoted material: count approximate word percentage inside quotation marks
-  • Low = 0–30%, Medium = 31–60%, High = 61–100%
+  • Low = 0-30%, Medium = 31-60%, High = 61-100%
 
 Output ONLY this JSON (no other text):
 {
@@ -473,9 +473,9 @@ ARTICLE TEXT:
 Analyze ONLY reporter's narrative (exclude all quoted text).
 
 Flag phrases ONLY if ALL are true:
-1. Value‑laden (judgmental adjectives/adverbs, insinuating verbs, speculative hedges)
+1. Value-laden (judgmental adjectives/adverbs, insinuating verbs, speculative hedges)
 2. A neutral, precise alternative exists
-3. The phrase is NOT a factual statistic, measurement, count, date, quote attribution, or data‑backed descriptor
+3. The phrase is NOT a factual statistic, measurement, count, date, quote attribution, or data-backed descriptor
 
 Do NOT flag:
 - Precise technical/legal terms ("felony", "GDP contracted")
@@ -520,7 +520,7 @@ Flag ONLY if falsifiable criteria met:
 
 Thresholds:
 - Need ≥2 INDEPENDENT indicators (different types/sources) OR
-- 1 High‑strength indicator corroborated by story structure (headline/lead/positioning)
+- 1 High-strength indicator corroborated by story structure (headline/lead/positioning)
 
 Output ONLY this JSON:
 {
@@ -901,7 +901,7 @@ ${omissionResponse}
 CRITICAL RULES:
 - Default to Center unless the point & independence thresholds are met.
 - Never rate Opinion/Analysis for news bias (use Unclear with the note).
-- NEVER treat statistics/data‑backed claims as loaded language.
+- NEVER treat statistics/data-backed claims as loaded language.
 -- Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
 
   const moderatorPrompt = AgentPrompts.createModeratorPrompt(

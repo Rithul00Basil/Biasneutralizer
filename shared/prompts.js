@@ -23,7 +23,7 @@ Rules:
 - Detect opinion/analysis markers in headers/bylines (e.g., "Opinion", "Analysis", "Column")
 - Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
 - Estimate quoted material: approximate % of words inside quotation marks
-  • Low = 0–30%, Medium = 31–60%, High = 61–100%
+  — Low = 0—30%, Medium = 31—60%, High = 61—100%
 
 Output ONLY this JSON (no other text):
 {
@@ -125,7 +125,7 @@ Flag ONLY if falsifiable criteria met:
 - Editorial insertion: Adjectives judging motives/morality
 
 Thresholds:
-- Need ≥2 INDEPENDENT indicators (different types/examples) OR
+- Need —2 INDEPENDENT indicators (different types/examples) OR
 - 1 High-strength indicator corroborated by story structure (headline/lead/positioning)
 
 Output ONLY this JSON:

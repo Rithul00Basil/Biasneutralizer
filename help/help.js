@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BiasNeutralizer Help Page Controller
  * Manages navigation and interactions on the help page
  */

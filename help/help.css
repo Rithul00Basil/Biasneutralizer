@@ -1,4 +1,4 @@
-/* ===== BiasNeutralizer Help Page Styles ===== */
+﻿/* ===== BiasNeutralizer Help Page Styles ===== */
 
 :root {
   --bg-gradient-top: #0F172A;
@@ -1307,7 +1307,7 @@ ol.help-list li::before {
 
 /* ===== Checklist Variant ===== */
 .help-list.checklist li::before {
-  content: '☑';
+  content: '✓';
   color: #10B981;
   font-size: 16px;
 }
