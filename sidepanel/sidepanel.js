@@ -329,6 +329,123 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
+   * Checks GPU and shows warning if integrated graphics detected
+   */
+  async function checkGPU() {
+    try {
+      const { gpuWarningDismissed } = await chrome.storage.local.get(['gpuWarningDismissed']);
+      if (gpuWarningDismissed) return;
+
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl');
+      if (!gl) return;
+
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (!debugInfo) return;
+
+      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      
+      if (renderer.includes('Intel') && !renderer.includes('Iris Xe') && !renderer.includes('Arc')) {
+        showGPUWarning();
+      }
+    } catch (error) {
+      console.warn('[BiasNeutralizer] GPU check failed:', error);
+    }
+  }
+
+  /**
+   * Shows simple GPU warning modal
+   */
+  function showGPUWarning() {
+    const overlay = document.createElement('div');
+    overlay.className = 'bn-modal-overlay visible';
+
+    const modal = document.createElement('div');
+    modal.className = 'bn-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-labelledby', 'gpu-modal-title');
+    modal.setAttribute('aria-describedby', 'gpu-modal-desc');
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'bn-modal-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    
+    const icon = document.createElement('div');
+    icon.className = 'bn-modal-icon';
+    icon.textContent = '⚠️';
+    
+    const title = document.createElement('h3');
+    title.id = 'gpu-modal-title';
+    title.textContent = 'Integrated GPU Detected';
+    
+    const desc = document.createElement('p');
+    desc.id = 'gpu-modal-desc';
+    desc.textContent = 'Your device may experience slower processing with on-device AI. Switch to Cloud AI for faster results.';
+    
+    const actions = document.createElement('div');
+    actions.className = 'bn-modal-actions';
+    
+    const primaryBtn = document.createElement('button');
+    primaryBtn.id = 'gpu-switch-cloud';
+    primaryBtn.className = 'bn-btn bn-btn-primary';
+    primaryBtn.textContent = 'Use Cloud AI';
+    
+    const secondaryBtn = document.createElement('button');
+    secondaryBtn.id = 'gpu-continue';
+    secondaryBtn.className = 'bn-btn bn-btn-secondary';
+    secondaryBtn.textContent = 'Continue Anyway';
+    
+    actions.appendChild(primaryBtn);
+    actions.appendChild(secondaryBtn);
+    
+    const checkbox = document.createElement('label');
+    checkbox.className = 'bn-modal-checkbox';
+    const checkboxInput = document.createElement('input');
+    checkboxInput.id = 'gpu-dont-show';
+    checkboxInput.type = 'checkbox';
+    const checkboxSpan = document.createElement('span');
+    checkboxSpan.textContent = "Don't show this again";
+    checkbox.appendChild(checkboxInput);
+    checkbox.appendChild(checkboxSpan);
+    
+    modal.appendChild(closeBtn);
+    modal.appendChild(icon);
+    modal.appendChild(title);
+    modal.appendChild(desc);
+    modal.appendChild(actions);
+    modal.appendChild(checkbox);
+    
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      const dontShow = checkboxInput.checked;
+      if (dontShow) {
+        chrome.storage.local.set({ gpuWarningDismissed: true });
+      }
+      overlay.classList.remove('visible');
+      setTimeout(() => overlay.remove(), 200);
+    };
+
+    closeBtn.onclick = close;
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+    });
+
+    primaryBtn.onclick = () => {
+      chrome.storage.local.set({ privateMode: false, gpuWarningDismissed: true }, () => {
+        elements?.privateToggle?.classList.remove('on');
+        showNotification('Switched to Cloud AI', 'success');
+        close();
+      });
+    };
+
+    secondaryBtn.onclick = close;
+  }
+
+  /**
    * Shows a fatal error message to the user
    */
   function showFatalError(message) {
@@ -1171,5 +1288,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   console.log('[BiasNeutralizer] Side panel initializing...');
   initializePanelState();
   setupEventListeners();
+  checkGPU();
   console.log('[BiasNeutralizer] Side panel ready');
 });

@@ -2089,3 +2089,145 @@ footer.api-footer {
   background: rgba(255, 255, 255, 0.2);
   transform: rotate(90deg);
 }
+
+/* === Branded Modal (GPU notice) === */
+.bn-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.bn-modal-overlay.visible {
+  opacity: 1;
+}
+
+.bn-modal-overlay.closing {
+  opacity: 0;
+}
+
+.bn-modal {
+  position: relative;
+  width: min(420px, 90vw);
+  background: #1e293b;
+  border-radius: 16px;
+  padding: 32px;
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  transform: scale(0.95);
+  opacity: 0;
+  animation: bnModalIn 0.2s ease forwards;
+}
+
+@keyframes bnModalIn {
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.bn-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 24px;
+  cursor: pointer;
+  transition: color 0.15s;
+  line-height: 1;
+}
+
+.bn-modal-close:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.bn-modal-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.bn-modal h3 {
+  margin: 0 0 12px 0;
+  font-family: var(--font-poppins);
+  font-weight: 600;
+  font-size: 20px;
+  color: #fff;
+}
+
+.bn-modal p {
+  margin: 0 0 24px 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.bn-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.bn-btn {
+  flex: 1;
+  padding: 12px 20px;
+  border-radius: 8px;
+  border: none;
+  font-family: var(--font-poppins);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bn-btn-primary {
+  background: #3B82F6;
+  color: #fff;
+}
+
+.bn-btn-primary:hover {
+  background: #2563EB;
+  transform: translateY(-1px);
+}
+
+.bn-btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.bn-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.bn-modal-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.bn-modal-checkbox input[type="checkbox"] {
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .bn-modal {
+    padding: 28px 24px;
+  }
+  
+  .bn-modal-actions {
+    flex-direction: column;
+  }
+}

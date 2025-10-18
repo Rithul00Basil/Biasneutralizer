@@ -142,113 +142,143 @@ function injectHighlightStyles() {
   const styleEl = document.createElement('style');
   styleEl.id = 'bias-neutralizer-styles';
   styleEl.textContent = `
-    /* Highlight styles */
+    /* Highlight styles - Clean and minimal */
     .bias-highlight {
-      background-color: #fff3cd;
-      border-bottom: 2px solid #ffc107;
+      background: linear-gradient(to bottom, rgba(251, 191, 36, 0.25), rgba(251, 191, 36, 0.35));
+      border-bottom: 2px solid #F59E0B;
       cursor: pointer;
-      padding: 2px 4px;
-      border-radius: 3px;
-      transition: background-color 0.2s ease;
+      padding: 1px 2px;
+      border-radius: 2px;
+      transition: all 0.2s ease;
     }
 
     .bias-highlight:hover {
-      background-color: #ffe69c;
+      background: linear-gradient(to bottom, rgba(251, 191, 36, 0.35), rgba(251, 191, 36, 0.45));
+      box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
     }
 
     .neutral-highlight {
-      background-color: rgba(209, 250, 229, 0.8);
-      border-bottom: 2px solid #10b981;
+      background: linear-gradient(to bottom, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.25));
+      border-bottom: 2px solid #10B981;
       cursor: pointer;
-      padding: 2px 4px;
-      border-radius: 3px;
+      padding: 1px 2px;
+      border-radius: 2px;
       transition: all 0.2s ease;
     }
 
     .neutral-highlight:hover {
-      background-color: rgba(167, 243, 208, 0.9);
-      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+      background: linear-gradient(to bottom, rgba(16, 185, 129, 0.25), rgba(16, 185, 129, 0.35));
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.2);
     }
 
-    /* Small popup styles */
+    /* Clean minimal popup - matches app theme */
     .neutralizer-popup {
       position: absolute;
-      background: white;
-      border: none;
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 12px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
       padding: 0;
       z-index: 999999;
-      min-width: 300px;
-      max-width: 450px;
+      min-width: 340px;
+      max-width: 420px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-size: 14px;
+      color: #fff;
       overflow: hidden;
+      animation: popupFadeIn 0.2s ease;
+    }
+
+    @keyframes popupFadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
 
     .popup-header {
-      padding: 16px 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-
-    .popup-header-biased {
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    }
-
-    .popup-header-neutral {
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
     }
 
     .popup-title {
       font-weight: 600;
       font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin: 0 0 8px 0;
-      opacity: 0.9;
+      color: #FFA500;
+      margin: 0 0 6px 0;
     }
 
     .popup-phrase {
-      font-size: 16px;
-      font-weight: 500;
+      font-size: 14px;
+      font-weight: 400;
       margin: 0;
+      color: rgba(255, 255, 255, 0.95);
+      line-height: 1.5;
       word-break: break-word;
     }
 
     .popup-body {
-      padding: 20px;
+      padding: 16px 18px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 13px;
+      line-height: 1.6;
     }
 
-    .popup-section {
-      margin-bottom: 16px;
-    }
-
-    .popup-section:last-child {
-      margin-bottom: 0;
-    }
-
-    .popup-section-label {
+    .popup-label {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #6b7280;
-      margin-bottom: 6px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
     }
 
-    .popup-section-content {
-      font-size: 14px;
+    .popup-explanation {
+      color: rgba(255, 255, 255, 0.85);
+      margin-bottom: 16px;
+    }
+
+    .popup-neutral-result {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .popup-neutral-result.visible {
+      display: block;
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .popup-neutral-text {
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 13px;
       line-height: 1.6;
-      color: #1f2937;
     }
 
     .popup-actions {
       display: flex;
-      gap: 8px;
-      padding: 16px 20px;
-      background: #f9fafb;
-      border-top: 1px solid #e5e7eb;
+      gap: 10px;
+      padding: 16px 18px;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .popup-btn {
@@ -256,29 +286,157 @@ function injectHighlightStyles() {
       padding: 10px 16px;
       border: none;
       border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.15s;
+    }
+
+    .popup-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .popup-btn-primary {
-      background: #3b82f6;
+      background: #3B82F6;
       color: white;
     }
 
-    .popup-btn-primary:hover {
-      background: #2563eb;
+    .popup-btn-primary:hover:not(:disabled) {
+      background: #2563EB;
+      transform: translateY(-1px);
     }
 
     .popup-btn-secondary {
-      background: white;
-      color: #374151;
-      border: 1px solid #d1d5db;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.9);
     }
 
-    .popup-btn-secondary:hover {
-      background: #f3f4f6;
+    .popup-btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Neutral popup - minimal tooltip style */
+    .neutralizer-popup.neutral-popup {
+      min-width: 280px;
+      max-width: 320px;
+      animation: popupFadeIn 0.2s ease;
+    }
+
+    .neutral-popup .popup-header {
+      padding: 12px 16px;
+      border: none;
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .neutral-popup .popup-title {
+      color: #10B981;
+      font-size: 12px;
+      margin: 0;
+    }
+
+    .neutral-popup .popup-body {
+      padding: 12px 16px;
+      font-size: 12px;
+    }
+
+    .neutral-popup .popup-actions {
+      padding: 10px 16px;
+    }
+
+    /* GPU-efficient loading spinner */
+    .btn-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* Optimized spin animation using transform */
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Typing dots animation (GPU-efficient) */
+    .typing-dots {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .typing-dots span {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background: currentColor;
+      border-radius: 50%;
+      opacity: 0.4;
+      animation: typingDot 1.4s infinite ease-in-out;
+    }
+
+    .typing-dots span:nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    .typing-dots span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dots span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typingDot {
+      0%, 60%, 100% {
+        opacity: 0.4;
+        transform: scale(1);
+      }
+      30% {
+        opacity: 1;
+        transform: scale(1.3);
+      }
+    }
+
+    /* Streaming cursor effect */
+    .streaming::after,
+    .popup-neutral-text.streaming::after {
+      content: '▊';
+      animation: blink 1s infinite;
+      margin-left: 2px;
+      color: #3B82F6;
+    }
+
+    @keyframes blink {
+      0%, 50% {
+        opacity: 1;
+      }
+      51%, 100% {
+        opacity: 0;
+      }
+    }
+
+    /* GPU warning style */
+    .gpu-warning {
+      margin-top: 8px;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .neutralizer-popup-buttons {
@@ -1098,131 +1256,177 @@ function showBiasedPopup(highlightElement) {
   const popup = document.createElement('div');
   popup.className = 'neutralizer-popup';
 
-  const header = document.createElement('div');
-  header.className = 'popup-header popup-header-biased';
-  header.innerHTML = `
-    <div class="popup-title">Biased Language Detected</div>
-    <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
+  // Clean minimal design matching app theme
+  popup.innerHTML = `
+    <div class="popup-header">
+      <div class="popup-title">Biased Language</div>
+      <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
+    </div>
+    <div class="popup-body">
+      <div class="popup-label">Why This Is Biased</div>
+      <div class="popup-explanation">${escapeHtml(explanation || 'Loaded language detected')}</div>
+      
+      <div class="popup-neutral-result" id="neutral-result">
+        <div class="popup-label">Neutralized Version</div>
+        <div class="popup-neutral-text" id="neutral-text"></div>
+      </div>
+    </div>
+    <div class="popup-actions">
+      <button class="popup-btn popup-btn-secondary" id="learn-more-btn">Learn More</button>
+      <button class="popup-btn popup-btn-primary" id="neutralize-btn">Neutralize</button>
+    </div>
   `;
-  popup.appendChild(header);
-
-  const body = document.createElement('div');
-  body.className = 'popup-body';
-
-  const section1 = document.createElement('div');
-  section1.className = 'popup-section';
-  section1.innerHTML = `
-    <div class="popup-section-label">Why This Is Biased</div>
-    <div class="popup-section-content">${escapeHtml(explanation || 'Loaded language detected')}</div>
-  `;
-  body.appendChild(section1);
-
-  if (neutralAlternative) {
-    const section2 = document.createElement('div');
-    section2.className = 'popup-section';
-    section2.innerHTML = `
-      <div class="popup-section-label">Neutral Alternative</div>
-      <div class="popup-section-content">"${escapeHtml(neutralAlternative)}"</div>
-    `;
-    body.appendChild(section2);
-  }
-
-  popup.appendChild(body);
-
-  const actions = document.createElement('div');
-  actions.className = 'popup-actions';
-
-  const learnBtn = document.createElement('button');
-  learnBtn.className = 'popup-btn popup-btn-secondary';
-  learnBtn.textContent = 'Learn More';
-  learnBtn.onclick = () => handleKnowMore();
-
-  const neutralizeBtn = document.createElement('button');
-  neutralizeBtn.className = 'popup-btn popup-btn-primary';
-  neutralizeBtn.textContent = 'Neutralize';
-  neutralizeBtn.onclick = () => handleNeutralize(originalPhrase, popup, neutralAlternative);
-
-  actions.appendChild(learnBtn);
-  actions.appendChild(neutralizeBtn);
-  popup.appendChild(actions);
 
   document.body.appendChild(popup);
   positionPopup(popup, highlightElement);
+
+  // Bind events
+  popup.querySelector('#learn-more-btn').addEventListener('click', () => {
+    handleKnowMore();
+  });
+
+  popup.querySelector('#neutralize-btn').addEventListener('click', () => {
+    handleNeutralizeInPopup(originalPhrase, explanation, popup, neutralAlternative);
+  });
 
   currentPopup = popup;
   console.log('[BiasNeutralizer] Biased popup shown');
 }
 
+/**
+ * Neutralize text and show result in popup
+ */
+async function handleNeutralizeInPopup(originalText, explanation, popup, suggestedAlternative) {
+  console.log('[BiasNeutralizer] Neutralizing:', originalText);
+
+  const neutralBtn = popup.querySelector('#neutralize-btn');
+  const neutralSection = popup.querySelector('#neutral-result');
+  const neutralTextEl = popup.querySelector('#neutral-text');
+
+  // Show loading state
+  neutralBtn.disabled = true;
+  neutralBtn.textContent = 'Neutralizing...';
+  neutralSection.classList.add('visible');
+  neutralTextEl.innerHTML = '<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+
+  try {
+    // Check API support
+    if (!('Rewriter' in self)) {
+      throw new Error('REWRITER_NOT_SUPPORTED');
+    }
+
+    const availability = await Rewriter.availability();
+    console.log('[BiasNeutralizer] Rewriter availability:', availability);
+
+    if (availability === 'no') {
+      throw new Error('MODEL_NOT_AVAILABLE');
+    }
+
+    if (availability === 'after-download') {
+      neutralTextEl.innerHTML = '<div style="font-size: 12px;">Downloading AI model (22GB)...<br>This will take 10-30 minutes</div>';
+    }
+
+    // Create rewriter
+    const rewriter = await Rewriter.create({
+      sharedContext: `Rewrite biased language from news articles into neutral alternatives. Remove emotional language while preserving facts.`,
+      tone: 'as-is',
+      format: 'plain-text',
+      length: 'as-is',
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          const percent = Math.round(e.loaded * 100);
+          neutralTextEl.innerHTML = `<div style="font-size: 12px;">Downloading: ${percent}%<br>Please keep this tab open</div>`;
+        });
+      }
+    });
+
+    currentRewriterSession = rewriter;
+
+    // Stream the neutral version
+    neutralTextEl.classList.add('streaming');
+    neutralTextEl.textContent = '';
+
+    const stream = await rewriter.rewriteStreaming(originalText, {
+      context: `Remove bias: ${explanation}`
+    });
+
+    let fullText = '';
+    for await (const chunk of stream) {
+      fullText = chunk;
+      neutralTextEl.textContent = `"${fullText}"`;
+    }
+
+    neutralTextEl.classList.remove('streaming');
+
+    // Update button
+    neutralBtn.textContent = 'Done';
+    neutralBtn.disabled = true;
+
+    console.log('[BiasNeutralizer] Neutralization complete');
+
+  } catch (error) {
+    console.error('[BiasNeutralizer] Neutralization failed:', error);
+    
+    if (error.message === 'REWRITER_NOT_SUPPORTED') {
+      neutralTextEl.innerHTML = `
+        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">On-device AI not available</div>
+        ${suggestedAlternative ? `<div>"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested by analysis</div>` : '<div style="opacity: 0.7; font-size: 12px;">Try Cloud AI mode in settings</div>'}
+      `;
+    } else if (error.message === 'MODEL_NOT_AVAILABLE') {
+      neutralTextEl.innerHTML = `
+        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">Device doesn't support on-device AI</div>
+        ${suggestedAlternative ? `<div style="margin-top: 8px;">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested alternative</div>` : ''}
+      `;
+    } else {
+      neutralTextEl.innerHTML = `
+        <div style="color: #EF4444; font-size: 12px;">Error: ${escapeHtml(error.message)}</div>
+        ${suggestedAlternative ? `<div style="margin-top: 8px;">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested alternative</div>` : ''}
+      `;
+    }
+
+    neutralBtn.textContent = 'Try Again';
+    neutralBtn.disabled = false;
+  }
+}
+
+
+
 function showNeutralPopup(highlightElement) {
-  // Close any existing popup
   closePopup();
 
   const originalPhrase = highlightElement.getAttribute('data-original-phrase');
   const explanation = highlightElement.getAttribute('data-explanation');
-  const phraseType = highlightElement.getAttribute('data-phrase-type');
 
-  // Create popup
   const popup = document.createElement('div');
-  popup.className = 'neutralizer-popup';
+  popup.className = 'neutralizer-popup neutral-popup';
 
-  // Create content
-  const content = document.createElement('div');
-  content.innerHTML = `
-    <div style="margin-bottom: 8px;">
-      <strong style="color: #28a745;">Good journalism example:</strong>
-      <div style="margin-top: 4px; color: #666;">"${originalPhrase}"</div>
+  popup.innerHTML = `
+    <div class="popup-header">
+      <div class="popup-title">Neutral Language</div>
+    </div>
+    <div class="popup-body">
+      <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
+      ${explanation ? `<div style="margin-top: 8px; color: rgba(255, 255, 255, 0.7); font-size: 12px;">${escapeHtml(explanation)}</div>` : ''}
+    </div>
+    <div class="popup-actions">
+      <button class="popup-btn popup-btn-secondary" style="width: 100%;" id="learn-more-btn">Learn More</button>
     </div>
   `;
 
-  // Add type badge if available
-  if (phraseType) {
-    const typeBadge = document.createElement('div');
-    typeBadge.style.display = 'inline-block';
-    typeBadge.style.padding = '2px 8px';
-    typeBadge.style.backgroundColor = '#e8f5e9';
-    typeBadge.style.color = '#28a745';
-    typeBadge.style.borderRadius = '12px';
-    typeBadge.style.fontSize = '11px';
-    typeBadge.style.fontWeight = '600';
-    typeBadge.style.marginTop = '6px';
-    typeBadge.style.marginBottom = '6px';
-    typeBadge.textContent = phraseType;
-    content.appendChild(typeBadge);
-  }
-
-  // Add explanation
-  if (explanation) {
-    const explanationDiv = document.createElement('div');
-    explanationDiv.style.fontSize = '13px';
-    explanationDiv.style.color = '#333';
-    explanationDiv.style.marginTop = '10px';
-    explanationDiv.style.padding = '10px';
-    explanationDiv.style.backgroundColor = '#f8f9fa';
-    explanationDiv.style.borderRadius = '6px';
-    explanationDiv.style.borderLeft = '3px solid #28a745';
-    explanationDiv.innerHTML = `<strong style="display: block; margin-bottom: 4px; font-size: 12px; color: #28a745;">Why this is good:</strong>${explanation}`;
-    content.appendChild(explanationDiv);
-  }
-
-  popup.appendChild(content);
-
-  // Create button container with only "Know more" button
-  const buttonContainer = document.createElement('div');
-  buttonContainer.style.marginTop = '12px';
-  buttonContainer.style.textAlign = 'center';
-
-  const knowMoreBtn = document.createElement('button');
-  knowMoreBtn.className = 'neutralizer-popup-know-more';
-  knowMoreBtn.textContent = 'Know more';
-  knowMoreBtn.style.width = '100%';
-  knowMoreBtn.onclick = () => handleKnowMore();
-
-  buttonContainer.appendChild(knowMoreBtn);
-  popup.appendChild(buttonContainer);
-
-  // Position popup
   document.body.appendChild(popup);
   positionPopup(popup, highlightElement);
+
+  // Bind learn more
+  popup.querySelector('#learn-more-btn').addEventListener('click', () => {
+    handleKnowMore();
+  });
+
+  // Auto-dismiss after 4 seconds
+  setTimeout(() => {
+    if (currentPopup === popup) {
+      closePopup();
+    }
+  }, 4000);
 
   currentPopup = popup;
   console.log('[BiasNeutralizer] Neutral popup shown');

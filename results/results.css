@@ -179,6 +179,26 @@ details.methodology-card {
 
 .card-title{font-family:var(--font-poppins);font-weight:700;font-size:20px;letter-spacing:-0.02em;color:var(--text-white-100);margin:0;flex:1}
 
+.cloud-fallback-note{
+  font-family:var(--font-inter);
+  font-size:12px;
+  font-weight:500;
+  color:var(--text-white-70);
+  padding:4px 12px;
+  background:rgba(255,255,255,0.05);
+  border-radius:var(--radius-full);
+  border:1px solid rgba(255,255,255,0.08);
+  white-space:nowrap;
+  margin-left:auto;
+  cursor:help;
+  transition:all var(--transition-base);
+}
+.cloud-fallback-note:hover{
+  color:var(--text-white-90);
+  background:rgba(255,255,255,0.08);
+  border-color:rgba(255,255,255,0.15);
+}
+
 .expand-icon{font-size:14px;color:var(--text-white-60);transition:transform var(--transition-base)}
 details[open] .expand-icon{transform:rotate(180deg)}
 
@@ -188,7 +208,15 @@ details[open] .expand-icon{transform:rotate(180deg)}
 .analysis-card--success .card-icon{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.3)}
 .analysis-card--success:hover .card-icon{background:rgba(16,185,129,0.18)}
 
-.card-body{color:var(--text-white-90);font-family:var(--font-inter);font-size:15px;line-height:1.7;letter-spacing:-0.01em}
+.card-body{
+  color:var(--text-white-90);
+  font-family:var(--font-inter);
+  font-size:15px;
+  line-height:1.7;
+  letter-spacing:-0.01em;
+  max-height:none !important;
+  overflow:visible !important;
+}
 .card-body ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--spacing-md)}
 .card-body li{position:relative;padding-left:28px;color:var(--text-white-90);transition:all var(--transition-base)}
 .card-body li:hover{color:var(--text-white-100);transform:translateX(4px)}

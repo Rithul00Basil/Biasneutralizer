@@ -8,6 +8,7 @@
     console.log('[Results] Loading summary...');
 
     const summarySection = document.getElementById('summary-content');
+    const summaryCard = document.querySelector('.analysis-card--summary');
     if (!summarySection) return;
 
     let attempts = 0;
@@ -30,7 +31,24 @@
       if (summaryData.status === 'complete') {
         clearInterval(pollInterval);
         summarySection.innerHTML = summaryData.data || '<p class="placeholder-text">Summary completed but empty</p>';
-        console.log('[Results] Summary loaded successfully');
+        
+        // Add cloud fallback note if applicable
+        if (summaryData.usedCloudFallback && summaryCard) {
+          const cardHeader = summaryCard.querySelector('.card-header');
+          if (cardHeader) {
+            // Check if note already exists
+            if (!cardHeader.querySelector('.cloud-fallback-note')) {
+              const note = document.createElement('span');
+              note.className = 'cloud-fallback-note';
+              note.textContent = 'ℹ️ Cloud-generated summary';
+              note.title = 'Summary generated using Gemini API (on-device model unavailable)';
+              cardHeader.appendChild(note);
+              console.log('[Results] Cloud fallback note added');
+            }
+          }
+        }
+        
+        console.log('[Results] Summary loaded successfully (cloudFallback=' + summaryData.usedCloudFallback + ')');
       } else if (summaryData.status === 'generating') {
         summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
       } else if (summaryData.status === 'error') {
@@ -454,9 +472,10 @@
     }
     
     let md = normalizeModeratorSections(summaryText);
-    if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
+    // Remove truncation - let full analysis display
+    // if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
 
-    parseAndRenderAnalysis(md, raw);
+    await parseAndRenderAnalysis(md, raw);
 
     const biasHeroEl = document.querySelector('.bias-hero');
     if (biasHeroEl) {
@@ -585,7 +604,59 @@
   // ========================================
   // PARSE AND RENDER ANALYSIS
   // ========================================
-  function parseAndRenderAnalysis(text, raw) {
+  // ========================================
+  // TYPEWRITER EFFECTS
+  // ========================================
+  
+  /**
+   * TRUE typewriter effect - types each character like ChatGPT
+   */
+  async function trueTypewriter(element, htmlContent, speed = 15) {
+    // Convert HTML to plain text for typing effect
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    const plainText = tempDiv.textContent || tempDiv.innerText;
+    
+    element.textContent = '';
+    element.style.opacity = '1';
+    
+    for (let i = 0; i < plainText.length; i++) {
+      element.textContent += plainText[i];
+      
+      // Variable speed - faster for spaces, slower for punctuation
+      const char = plainText[i];
+      let delay = speed;
+      if (char === ' ') delay = speed / 3;
+      else if (char === '.' || char === '!' || char === '?') delay = speed * 3;
+      else if (char === ',') delay = speed * 2;
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    // After typing completes, replace with formatted HTML
+    element.innerHTML = htmlContent;
+  }
+
+  /**
+   * Fade-in effect for HTML content (faster alternative)
+   */
+  async function fadeInEffect(element, htmlContent, delay = 200) {
+    await new Promise(resolve => setTimeout(resolve, delay));
+    element.innerHTML = htmlContent;
+    
+    // Animate opacity
+    element.style.opacity = '0';
+    element.style.transition = 'opacity 0.5s ease-in-out';
+    setTimeout(() => {
+      element.style.opacity = '1';
+    }, 50);
+  }
+
+  // ========================================
+  // PARSE AND RENDER ANALYSIS
+  // ========================================
+  
+  async function parseAndRenderAnalysis(text, raw) {
     const sections = parseAnalysisSections(text);
     
     window.__analysisSections = sections;
@@ -596,34 +667,51 @@
     
     const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
     
-    // Populate Key Findings
+    // Populate Key Findings with streaming effect
     if (sections.keyFindings && sections.keyFindings.length > 0) {
-      renderBulletList(els.keyFindings, sections.keyFindings);
+      els.keyFindings.innerHTML = '<p class="placeholder-text">Loading findings...</p>';
+      setTimeout(() => {
+        renderBulletList(els.keyFindings, sections.keyFindings);
+      }, 300);
     } else if (analysisData && analysisData.biasIndicators && analysisData.biasIndicators.length > 0) {
       const findings = analysisData.biasIndicators.map(ind => 
         `${ind.type}: ${ind.explanation || ind.example}`
       );
-      renderBulletList(els.keyFindings, findings);
+      els.keyFindings.innerHTML = '<p class="placeholder-text">Loading findings...</p>';
+      setTimeout(() => {
+        renderBulletList(els.keyFindings, findings);
+      }, 300);
     } else {
       els.keyFindings.innerHTML = '<p class="placeholder-text">No significant bias indicators found</p>';
     }
     
-    // Populate Loaded Language
-    renderLoadedFromRaw();
+    // Populate Loaded Language with streaming effect
+    setTimeout(() => {
+      renderLoadedFromRaw();
+    }, 600);
     
-    // Populate Balanced Elements
+    // Populate Balanced Elements with streaming effect
     if (sections.balancedElements && sections.balancedElements.length > 0) {
-      renderBulletList(els.balancedElements, sections.balancedElements);
+      els.balancedElements.innerHTML = '<p class="placeholder-text">Loading balanced elements...</p>';
+      setTimeout(() => {
+        renderBulletList(els.balancedElements, sections.balancedElements);
+      }, 900);
     } else if (analysisData && analysisData.balancedElements && analysisData.balancedElements.length > 0) {
       const elements = analysisData.balancedElements.map(el => 
         `${el.type}: ${el.explanation}`
       );
-      renderBulletList(els.balancedElements, elements);
+      els.balancedElements.innerHTML = '<p class="placeholder-text">Loading balanced elements...</p>';
+      setTimeout(() => {
+        renderBulletList(els.balancedElements, elements);
+      }, 900);
     } else {
       els.balancedElements.innerHTML = '<p class="placeholder-text">No notable balanced elements identified</p>';
     }
     
-    renderMethodology();
+    // Render methodology with delay
+    setTimeout(() => {
+      renderMethodology();
+    }, 1200);
   }
 
   function renderMethodology() {
