@@ -100,13 +100,13 @@ Eight specialized AI roles work together:
 ```mermaid
 flowchart TD
     A[User News Tab] -->|Extract HTML + heuristics| B(Content Script)
-    B -->|Sanitized article payload| C[Service Worker<br/>Multi-Agent Orchestrator]
+    B -->|Sanitized article payload| C[Service Worker Multi-Agent Orchestrator]
     C -->|Prompt batches + retries| D[(Google Gemini APIs)]
     D -->|Structured evidence + verdict| C
     C -->|Chrome storage update| E[(chrome.storage.local)]
     E -->|Bias report + highlights| F[Results Dashboard / Side Panel]
     F -->|Highlight instructions| B
-    B -->|Optional neutral rewrite| G[On-Device Rewriter<br/>(Gemini Nano)]
+    B -->|Optional neutral rewrite| G[On-Device Rewriter Gemini Nano]
 ```
 
 ### Hybrid workflow in three stages
@@ -275,50 +275,7 @@ bias-neutralizer/
 
 ---
 
-## 🤝 Contributing
 
-We welcome contributions! Here's how you can help:
-
-### Areas for Contribution
-
-- 🐛 **Bug Reports**: Found an issue? Open a GitHub issue
-- ✨ **Feature Requests**: Have an idea? We'd love to hear it
-- 📝 **Documentation**: Improve guides and examples
-- 🎨 **UI/UX**: Design improvements welcome
-- 🧪 **Testing**: Help test on different browsers and articles
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Test thoroughly
-5. Commit (`git commit -m 'Add amazing feature'`)
-6. Push (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
----
-
-## 📊 Roadmap
-
-- [ ] Firefox & Edge support
-- [ ] Multi-language bias detection
-- [ ] Historical bias tracking
-- [ ] Browser sync across devices
-- [ ] Custom agent configurations
-- [ ] API for developers
-- [ ] Mobile companion app
-
----
-
-## ⚠️ Known Issues
-
-- **On-device AI**: Requires Chrome 128+ Dev/Canary with flags enabled
-- **Large Articles**: Articles over 500KB are automatically truncated
-- **API Limits**: Subject to Gemini API rate limits and quotas
-- **Model Download**: First-time Gemini Nano download is ~22GB
-
----
 
 ## 📝 License
 
@@ -331,14 +288,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Google Gemini** - For powerful AI models
 - **Chrome Team** - For on-device AI APIs
 - **Open Source Community** - For inspiration and tools
-
----
-
-## 📧 Contact & Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/bias-neutralizer/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/bias-neutralizer/discussions)
-- **Email**: support@biasneutralizer.com (coming soon)
 
 ---
 
