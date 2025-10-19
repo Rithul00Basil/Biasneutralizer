@@ -11,6 +11,48 @@
     const summaryCard = document.querySelector('.analysis-card--summary');
     if (!summarySection) return;
 
+    // Get the current report being viewed
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewReportId = urlParams.get('reportId');
+    
+    let currentReport = null;
+    
+    if (viewReportId) {
+      // Viewing specific report from history
+      const { analysisHistory = [] } = await storageGet(['analysisHistory']);
+      currentReport = analysisHistory.find(r => String(r.id) === String(viewReportId));
+    } else {
+      // Viewing latest analysis
+      const { lastAnalysis } = await storageGet(['lastAnalysis']);
+      currentReport = lastAnalysis;
+    }
+    
+    if (!currentReport) {
+      summarySection.innerHTML = '<p class="placeholder-text">Report not found</p>';
+      return;
+    }
+    
+    // Check if this report has an embedded summary
+    if (currentReport.articleSummary) {
+      // Use the embedded summary (from when this report was created)
+      summarySection.innerHTML = currentReport.articleSummary;
+      
+      if (currentReport.summaryUsedCloud && summaryCard) {
+        const cardHeader = summaryCard.querySelector('.card-header');
+        if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
+          const note = document.createElement('span');
+          note.className = 'cloud-fallback-note';
+          note.textContent = 'ℹ️ Cloud-generated summary';
+          note.title = 'Summary generated using Gemini API (on-device model unavailable)';
+          cardHeader.appendChild(note);
+        }
+      }
+      
+      console.log('[Results] ✅ Summary loaded from embedded report data');
+      return;
+    }
+    
+    // Fallback: Try to get summary from lastSummary (for active scans)
     let attempts = 0;
     const maxAttempts = 60;
 
@@ -32,23 +74,18 @@
         clearInterval(pollInterval);
         summarySection.innerHTML = summaryData.data || '<p class="placeholder-text">Summary completed but empty</p>';
         
-        // Add cloud fallback note if applicable
         if (summaryData.usedCloudFallback && summaryCard) {
           const cardHeader = summaryCard.querySelector('.card-header');
-          if (cardHeader) {
-            // Check if note already exists
-            if (!cardHeader.querySelector('.cloud-fallback-note')) {
-              const note = document.createElement('span');
-              note.className = 'cloud-fallback-note';
-              note.textContent = 'ℹ️ Cloud-generated summary';
-              note.title = 'Summary generated using Gemini API (on-device model unavailable)';
-              cardHeader.appendChild(note);
-              console.log('[Results] Cloud fallback note added');
-            }
+          if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
+            const note = document.createElement('span');
+            note.className = 'cloud-fallback-note';
+            note.textContent = 'ℹ️ Cloud-generated summary';
+            note.title = 'Summary generated using Gemini API (on-device model unavailable)';
+            cardHeader.appendChild(note);
           }
         }
         
-        console.log('[Results] Summary loaded successfully (cloudFallback=' + summaryData.usedCloudFallback + ')');
+        console.log('[Results] ✅ Summary loaded from lastSummary (active scan)');
       } else if (summaryData.status === 'generating') {
         summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
       } else if (summaryData.status === 'error') {
@@ -271,36 +308,33 @@
   // ========================================
   // INITIALIZATION
   // ========================================
-  document.addEventListener('DOMContentLoaded', async () => {
-    // === CRITICAL FIX: Hide any blocking overlays immediately ===
-    // Remove loading state if it exists
-    const loadingState = document.querySelector('.loading-state');
-    if (loadingState) {
-      loadingState.remove();
-      console.log('[Results] Removed blocking loading state');
-    }
+  async function initResultsPage() {
+    try {
+      const assistantOverlay = document.getElementById('assistant-overlay');
+      if (assistantOverlay) {
+        assistantOverlay.style.display = 'none';
+        assistantOverlay.classList.remove('visible');
+        console.log('[Results] ✅ Hidden #assistant-overlay (display + class)');
+      }
 
-    // Ensure assistant overlay is hidden
-    const assistantOverlay = document.querySelector('.assistant-overlay');
-    if (assistantOverlay) {
-      assistantOverlay.classList.remove('visible');
-      console.log('[Results] Hidden assistant overlay');
+      document.body.style.pointerEvents = 'auto';
+      console.log('[Results] ✅ Set pointer-events to auto');
+    } catch (err) {
+      console.error('[Results] Error initializing overlays:', err);
     }
-
-    // Ensure no pointer-events blocking
-    document.body.style.pointerEvents = 'auto';
-    // Rest of initialization...
 
     cacheEls();
     bindEvents();
     setupStorageListener();
-    // Show loading, hide main content initially
-    try {
-      els.loadingState?.classList.remove('hidden');
-      els.mainContent?.classList.add('hidden');
-    } catch {}
     await refreshResults();
-  });
+    initScrollAnimations();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initResultsPage);
+  } else {
+    initResultsPage();
+  }
 
   function cacheEls() {
     els.title = document.getElementById('article-title');
@@ -369,52 +403,91 @@
   // ========================================
   async function refreshResults() {
     console.log('[DEBUG] refreshResults: Function started.');
-    // Read reportId from URL parameter instead of sessionStorage
-    const urlParams = new URLSearchParams(window.location.search);
-    const viewReportId = urlParams.get('reportId');
-    console.log('[DEBUG] refreshResults: Retrieved viewReportId from URL parameter:', viewReportId);
+  
+    // Show loading state at the very beginning
     if (els.loadingState) els.loadingState.classList.remove('hidden');
     if (els.mainContent) els.mainContent.classList.add('hidden');
-    
+  
     try {
-      let analysisData = null;
-      const { lastAnalysis, analysisHistory = [] } = await storageGet(['lastAnalysis', 'analysisHistory']);
-      console.log('[DEBUG] refreshResults: Fetched data from storage.', { lastAnalysis, analysisHistory });
-      console.log('[BiasNeutralizer Results] ===== LOADING ANALYSIS =====');
-      console.log('[BiasNeutralizer Results] lastAnalysis:', lastAnalysis);
-
-      if (viewReportId) {
-        console.log('[BiasNeutralizer Results] Loading specific report ID:', viewReportId);
-        analysisData = analysisHistory.find(r => String(r.id) === String(viewReportId)) || null;
-      }
-
-      if (!analysisData) {
-        console.log('[BiasNeutralizer Results] No specific report ID found, falling back to lastAnalysis.');
-        analysisData = lastAnalysis || null;
-      }
-
-      console.log('[DEBUG] refreshResults: Final analysisData object to be rendered:', analysisData);
-
-      if (!analysisData || typeof analysisData !== 'object') {
-        console.error('[DEBUG] refreshResults: ABORTING. analysisData is invalid. Calling renderEmpty().');
-        console.warn('[BiasNeutralizer Results] No valid analysis found');
-        if (els.loadingState) els.loadingState.classList.add('hidden');
-        if (els.mainContent) els.mainContent.classList.remove('hidden');
-        renderEmpty();
-        return;
-      }
+      // This is the core of the fix:
+      // We create a promise that will automatically fail after 5 seconds.
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Storage operation timed out after 5 seconds')), 5000)
+      );
+  
+      // We create a function that performs the actual data fetching.
+      const dataFetchOperation = async () => {
+        const { lastAnalysis, analysisHistory = [] } = await storageGet(['lastAnalysis', 'analysisHistory']);
+        console.log('[DEBUG] refreshResults: Fetched data from storage.', { lastAnalysis, analysisHistory });
+  
+        const urlParams = new URLSearchParams(window.location.search);
+        const viewReportId = urlParams.get('reportId');
+        let analysisData = null;
+  
+        if (viewReportId) {
+          analysisData = analysisHistory.find(r => String(r.id) === String(viewReportId)) || null;
+        }
+        if (!analysisData) {
+          analysisData = lastAnalysis || null;
+        }
+  
+        if (!analysisData || typeof analysisData !== 'object') {
+          // We throw an error here to be caught by the main catch block.
+          throw new Error('No valid analysis found');
+        }
+        return analysisData;
+      };
+  
+      // Promise.race() will proceed with whichever promise finishes first.
+      // If dataFetchOperation() takes >5s, timeoutPromise will reject and trigger the catch block.
+      const analysisData = await Promise.race([
+        dataFetchOperation(),
+        timeoutPromise
+      ]);
+  
+      // If we get here, it means the data fetch completed in time.
       if (analysisData.timestamp && analysisData.timestamp === lastRenderedTs) {
         console.log('[BiasNeutralizer Results] No change since last render.');
-        return;
+        return; // The 'finally' block will still run to hide the spinner.
       }
+  
       lastRenderedTs = analysisData.timestamp || Date.now();
-      console.log('[DEBUG] refreshResults: analysisData is valid. Calling render().');
       renderWhenVisible(async () => await render(analysisData));
-    } catch (e) {
-      console.error('[DEBUG] refreshResults: A critical error occurred!', e);
-      console.error('[BiasNeutralizer Results] Failed to load results:', e);
-      if (els.loadingState) {
-        els.loadingState.innerHTML = '<div class="loading-text" style="color: #EF4444;">Error during loading. Check console.</div>';
+  
+    } catch (error) {
+      // This block now catches both regular errors AND the timeout error.
+      console.error('[DEBUG] refreshResults: Caught error!', error);
+      console.error('[BiasNeutralizer Results] Failed to load results:', error);
+  
+      // Display a more specific error message for timeouts.
+      const errorMessage = error.message.includes('timed out')
+        ? 'Analysis data took too long to load. The browser storage might be busy or unresponsive.'
+        : 'Something went wrong while loading the analysis.';
+  
+      const errorContent = document.getElementById('main-content');
+      if (errorContent) {
+        errorContent.innerHTML = `
+          <div style="padding: 32px; text-align: center;">
+            <h2 style="color: #EF4444; margin: 0 0 12px 0;">Error Loading Analysis</h2>
+            <p style="color: #999; margin: 0;">${errorMessage}</p>
+            <p style="color: #666; font-size: 12px; margin-top: 16px;">Try refreshing the page or running a new analysis.</p>
+          </div>
+        `;
+      }
+    } finally {
+      // This block is the safety net. It ALWAYS runs, hiding the spinner.
+      console.log('[DEBUG] refreshResults: Finally block - ensuring UI is in stable state');
+  
+      const loadingState = document.getElementById('loading-state');
+      if (loadingState) {
+        loadingState.classList.add('hidden');
+        console.log('[Results] ✅ Ensured #loading-state is hidden');
+      }
+  
+      const mainContent = document.getElementById('main-content');
+      if (mainContent) {
+        mainContent.classList.remove('hidden');
+        console.log('[Results] ✅ Ensured #main-content is visible');
       }
     }
   }
@@ -482,7 +555,11 @@
       biasHeroEl.classList.remove('initially-hidden');
     }
     
-    const extracted = extractBiasRating(md);
+    // Use pre-extracted from storage if available
+    const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
+    const storedRating = analysisData?.extractedRating || null;
+    const storedConfidence = analysisData?.extractedConfidence || null;
+    const extracted = extractBiasRating(md, storedRating, storedConfidence);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
     
@@ -517,12 +594,27 @@
       }
     }
 
-    // Reveal main content after successful render
-    console.log('[DEBUG] render: All rendering logic complete. Hiding loading state.');
+    // === CRITICAL FIX: Reveal main content after successful render ===
+    console.log('[DEBUG] render: All rendering logic complete. Revealing main content.');
     try {
-      els.loadingState?.classList.add('hidden');
-      els.mainContent?.classList.remove('hidden');
-    } catch {}
+      // Ensure main content is visible and interactive
+      const mainContent = document.getElementById('main-content');
+      if (mainContent) {
+        mainContent.classList.remove('hidden');
+        console.log('[Results] ✅ Removed hidden class from #main-content');
+      } else {
+        console.error('[Results] ❌ #main-content element not found!');
+      }
+      
+      // Ensure loading state is hidden (if it still exists)
+      const loadingState = document.getElementById('loading-state');
+      if (loadingState) {
+        loadingState.classList.add('hidden');
+        console.log('[Results] ✅ Hidden #loading-state');
+      }
+    } catch (err) {
+      console.error('[Results] ❌ Error revealing main content:', err);
+    }
   }
 
   function safeDomain(u) {
@@ -582,7 +674,28 @@
     return out;
   }
 
-  function extractBiasRating(text) {
+  // Helper extractors (match background.js)
+  function extractRating(text) {
+    const match = text.match(/Rating:\s*([^\n]+)/i);
+    return match ? match[1].trim() : 'Unclear';
+  }
+
+  function extractConfidence(text) {
+    const match = text.match(/Confidence:\s*([^\n]+)/i);
+    return match ? match[1].trim() : 'Medium';
+  }
+
+  function extractBiasRating(text, storedRating = null, storedConfidence = null) {
+    // Priority 1: Use pre-extracted from storage
+    if (storedRating && storedConfidence) {
+      console.log('[BiasNeutralizer] ✅ Using pre-extracted rating:', { rating: storedRating, confidence: storedConfidence });
+      return {
+        rating: storedRating,
+        confidence: storedConfidence
+      };
+    }
+
+    // Priority 2: Extract from text
     if (!text || typeof text !== 'string') {
       return {
         rating: 'Unknown',
@@ -590,15 +703,22 @@
       };
     }
     
-    const ratingMatch = text.match(/\[?Rating\]?:?\s*(Strong\s+Left|Left|Lean\s+Left|Center|Lean\s+Right|Right|Strong\s+Right|Unclear)/i)
-      || text.match(/\[RATING\]\s*:\s*([^\n]+)/i);
-    const confidenceMatch = text.match(/\[?Confidence\]?:?\s*(High|Medium|Low)/i)
-      || text.match(/\[CONFIDENCE\]\s*:\s*([^\n]+)/i);
-
-    return {
-      rating: ratingMatch ? (ratingMatch[1] || ratingMatch[0].replace(/.*:\s*/, '')).trim() : 'Unknown',
-      confidence: confidenceMatch ? (confidenceMatch[1] || confidenceMatch[0].replace(/.*:\s*/, '')).trim() : 'Unknown'
-    };
+    try {
+      const rating = extractRating(text);
+      const confidence = extractConfidence(text);
+      
+      console.log('[BiasNeutralizer] ✅ Extracted rating from text:', { rating, confidence });
+      return {
+        rating: rating,
+        confidence: confidence
+      };
+    } catch (e) {
+      console.warn('[BiasNeutralizer] Failed to extract rating:', e);
+    }
+    
+    // Fallback
+    console.warn('[BiasNeutralizer] ⚠️ Could not extract rating, returning Unknown');
+    return { rating: 'Unknown', confidence: 'Unknown' };
   }
 
   // ========================================
@@ -993,7 +1113,7 @@
         
         const defenseTitle = document.createElement('div');
         defenseTitle.className = 'tribunal-section-title';
-        defenseTitle.textContent = 'ðŸ›¡ï¸ Defense\'s Rebuttal';
+        defenseTitle.textContent = "🛡️ Defense's Rebuttal";
         defenseSection.appendChild(defenseTitle);
         
         const rebuttalContent = document.createElement('p');
@@ -1022,7 +1142,7 @@
         
         const investigatorTitle = document.createElement('div');
         investigatorTitle.className = 'tribunal-section-title';
-        investigatorTitle.textContent = 'ðŸ”¬ Investigator\'s Facts';
+        investigatorTitle.textContent = "🔬 Investigator's Facts";
         investigatorSection.appendChild(investigatorTitle);
         
         const factsContent = document.createElement('p');
@@ -1478,11 +1598,7 @@ ${analysisContext}`;
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initScrollAnimations);
-  } else {
-    initScrollAnimations();
-  }
+  // initScrollAnimations is invoked within initResultsPage after DOM is ready
 
   document.documentElement.style.scrollBehavior = 'smooth';
 

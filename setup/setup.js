@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ========================================
   const elements = {
     onDeviceCard: document.getElementById('on-device-card'),
+    cloudCard: document.getElementById('cloud-card'),
     downloadButton: document.getElementById('download-model-button'),
     downloadButtonText: document.getElementById('download-button-text'),
     cancelDownloadButton: document.getElementById('cancel-download-button'),
@@ -22,6 +23,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     progressText: document.getElementById('progress-text'),
     deviceRequirements: document.getElementById('device-requirements'),
     notificationToast: document.getElementById('notification-toast'),
+    flagsStep: document.getElementById('flags-step'),
+    copyFlagsUrlButton: document.getElementById('copy-flags-url'),
+    flagCopyButtons: Array.from(document.querySelectorAll('.flag-copy-btn')),
+    flagsEnabledButton: document.getElementById('flags-enabled-button'),
+    flagsStatusMessage: document.getElementById('flags-status-message'),
+    flagsComplete: document.getElementById('flags-complete'),
+    flagsContinueButton: document.getElementById('flags-continue-button'),
   };
 
   // Validate all required elements exist
@@ -251,18 +259,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         'warning'
       );
     } else if (availabilityInfo.status === 'ready') {
-      // Model already exists - complete setup immediately
       updateStatus(availabilityInfo.message, 'success');
       elements.downloadButton.disabled = true;
       elements.downloadButtonText.textContent = 'Already Downloaded';
-      
-      console.log('[BiasNeutralizer Setup] Model already available, completing setup...');
-      completeSetup('on-device').then((success) => {
-        if (success) {
-          showNotification('Setup complete! Redirecting...', 'success');
-          navigateToSidePanel();
-        }
-      });
     } else if (availabilityInfo.status === 'needs-download') {
       // Ready to download
       updateStatus(availabilityInfo.message, 'success');
@@ -436,6 +435,91 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.cancelDownloadButton.addEventListener('click', handleCancelDownload);
   elements.skipCloudButton.addEventListener('click', handleSkipToCloud);
 
+  async function copyToClipboard(text, successMessage = 'Copied to clipboard') {
+    if (!navigator?.clipboard?.writeText) {
+      showNotification('Clipboard not available. Please copy manually.', 'warning');
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotification(successMessage, 'success');
+      return true;
+    } catch (error) {
+      console.warn('[BiasNeutralizer Setup] clipboard write failed:', error);
+      showNotification('Failed to copy to clipboard. Please copy manually.', 'error');
+      return false;
+    }
+  }
+
+  if (elements.copyFlagsUrlButton) {
+    elements.copyFlagsUrlButton.addEventListener('click', () => {
+      copyToClipboard('chrome://flags', 'chrome://flags copied. Paste into Chrome to open the flags page.');
+    });
+  }
+
+  if (elements.flagCopyButtons?.length) {
+    elements.flagCopyButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const flagName = btn.dataset.flagName;
+        copyToClipboard(flagName, `Copied "${flagName}". Paste into the Chrome flags search box.`);
+      });
+    });
+  }
+
+  if (elements.flagsContinueButton) {
+    elements.flagsContinueButton.addEventListener('click', async () => {
+      elements.flagsContinueButton.disabled = true;
+      elements.flagsContinueButton.classList.add('loading');
+      updateStatus('Completing setup...', 'info');
+      const success = await completeSetup('on-device');
+      if (success) {
+        showNotification('Setup complete! Redirecting...', 'success');
+        navigateToSidePanel();
+      } else {
+        elements.flagsContinueButton.disabled = false;
+        elements.flagsContinueButton.classList.remove('loading');
+        updateStatus('Failed to complete setup. Please try again.', 'error');
+      }
+    });
+  }
+
+  if (elements.flagsEnabledButton) {
+    elements.flagsEnabledButton.addEventListener('click', async () => {
+      elements.flagsEnabledButton.disabled = true;
+      elements.flagsEnabledButton.classList.add('loading');
+      elements.flagsStatusMessage.textContent = 'Re-checking on-device compatibility...';
+
+      const availabilityInfo = await checkFeatureAvailability();
+      state.modelAvailability = availabilityInfo;
+
+      if (availabilityInfo.available) {
+        if (availabilityInfo.status === 'ready') {
+          elements.flagsStatusMessage.textContent = 'On-device model already installed. Continue to finish setup.';
+          elements.flagsStatusMessage.className = 'flags-status-message success';
+          if (elements.flagsComplete) elements.flagsComplete.style.display = 'flex';
+          elements.onDeviceCard.classList.add('step-hidden');
+          elements.cloudCard.classList.add('step-hidden');
+        } else {
+          elements.flagsStatusMessage.textContent = 'Great! You are ready for on-device setup.';
+          elements.flagsStatusMessage.className = 'flags-status-message success';
+          elements.flagsStep.classList.add('step-hidden');
+          elements.onDeviceCard.classList.remove('step-hidden');
+          elements.cloudCard.classList.remove('step-hidden');
+          updateUIForAvailability(availabilityInfo);
+        }
+      } else {
+        elements.flagsStatusMessage.textContent = availabilityInfo.message;
+        elements.flagsStatusMessage.className = 'flags-status-message warning';
+        elements.onDeviceCard.classList.add('step-hidden');
+        elements.cloudCard.classList.remove('step-hidden');
+        updateUIForAvailability(availabilityInfo);
+      }
+
+      elements.flagsEnabledButton.disabled = false;
+      elements.flagsEnabledButton.classList.remove('loading');
+    });
+  }
+
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
     console.log('[BiasNeutralizer Setup] Page unloading, cleaning up...');
@@ -481,9 +565,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Perform feature detection
+  if (elements.flagsStep) {
+    elements.flagsStep.classList.remove('step-hidden');
+    elements.onDeviceCard.classList.add('step-hidden');
+    elements.cloudCard.classList.add('step-hidden');
+  }
+
+  elements.setupStatus.style.display = 'none';
+
   const availabilityInfo = await checkFeatureAvailability();
   state.modelAvailability = availabilityInfo;
-  updateUIForAvailability(availabilityInfo);
+
+  if (availabilityInfo.available) {
+    if (availabilityInfo.status === 'ready') {
+      elements.flagsStatusMessage.textContent = 'On-device model already installed. Continue to finish setup.';
+      elements.flagsStatusMessage.className = 'flags-status-message success';
+      if (elements.flagsComplete) elements.flagsComplete.style.display = 'flex';
+    } else {
+      elements.flagsStatusMessage.textContent = 'On-device features detected. You can continue.';
+      elements.flagsStatusMessage.className = 'flags-status-message success';
+    }
+  } else {
+    elements.flagsStatusMessage.textContent = 'We could not verify on-device readiness yet. Follow the steps above, restart, then check again.';
+    elements.flagsStatusMessage.className = 'flags-status-message warning';
+  }
+
+  elements.flagsEnabledButton.disabled = false;
+  elements.flagsEnabledButton.classList.remove('loading');
 
   console.log('[BiasNeutralizer Setup] Setup page ready');
 });

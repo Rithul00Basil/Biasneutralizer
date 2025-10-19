@@ -13,10 +13,10 @@
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#0F172A" />
   <!-- KaTeX for LaTeX rendering -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
-  <style>html,body{min-height:100%;margin:0;padding:0;}</style>
+  <link rel="stylesheet" href="../vendor/katex/katex.min.css">
+  <script defer src="../vendor/katex/katex.min.js"></script>
+  <script defer src="../vendor/katex/auto-render.min.js"></script>
+  
 
 </head>
 <body>
@@ -129,7 +129,7 @@
           </div>
 
           <!-- Tribunal Verdicts (new) -->
-          <div class="analysis-card" id="tribunal-verdicts-card" style="display: none;">
+          <div class="analysis-card" id="tribunal-verdicts-card">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
@@ -143,7 +143,7 @@
           </div>
 
           <!-- Structural Analysis (new) -->
-          <div class="analysis-card" id="structural-analysis-card" style="display: none;">
+          <div class="analysis-card" id="structural-analysis-card">
             <div class="card-background"></div>
             <div class="card-content">
               <div class="card-header">
@@ -200,14 +200,14 @@
         </div>
     </main>
 
-  <div class="assistant-overlay" id="assistant-overlay" style="display: none;">
+  <div class="assistant-overlay" id="assistant-overlay">
       <div class="assistant-modal" id="assistant-modal">
           <div class="assistant-header">
               <h3 class="assistant-title">Assistant</h3>
               <button class="assistant-close-btn" id="assistant-close-btn">&times;</button>
           </div>
           <div class="assistant-chat-window" id="assistant-chat-window">
-              <div class="assistant-message assistant-notification" id="assistant-first-use-notice" style="display: none;">
+              <div class="assistant-message assistant-notification" id="assistant-first-use-notice">
                   <p><strong>Quick Tip:</strong> The assistant is currently using a fast, private on-device model. For more powerful responses, you can switch to the Cloud API in the extension's settings.</p>
               </div>
           </div>

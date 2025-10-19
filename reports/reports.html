@@ -49,6 +49,19 @@
           <span class="stat-label">Storage Used</span>
         </div>
       </div>
+      <!-- Bulk Selection Controls -->
+      <div class="bulk-controls">
+        <div class="bulk-controls-left">
+          <input type="checkbox" id="select-all-checkbox" class="bulk-checkbox" aria-label="Select or deselect all visible reports" />
+          <label for="select-all-checkbox" class="bulk-label">Select All</label>
+        </div>
+        <div class="bulk-controls-right">
+          <button id="delete-selected-button" class="delete-selected-btn hidden" aria-label="Delete all selected reports">
+            <span class="button-icon">🗑️</span>
+            <span class="button-label">Delete Selected</span>
+          </button>
+        </div>
+      </div>
     </header>
     <main class="reports-main">
       <div class="reports-list-container">

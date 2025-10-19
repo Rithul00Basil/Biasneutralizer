@@ -1000,6 +1000,22 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
   } else if (dataType === 'neutral') {
     // Try multiple possible field names for neutral phrases
     phrase = phraseObj.example || phraseObj.phrase || phraseObj.text || '';
+    
+    // NEW: If still empty, extract from explanation as fallback
+    if (!phrase && phraseObj.explanation) {
+      // Extract first quoted text or first 50 chars from explanation
+      const quotedMatch = phraseObj.explanation.match(/"([^"]+)"/);
+      if (quotedMatch) {
+        phrase = quotedMatch[1];
+        console.log('[BiasNeutralizer] Extracted phrase from quotes in explanation:', phrase);
+      } else {
+        // Use first sentence or first 50 chars
+        const sentences = phraseObj.explanation.split(/[.!?]/);
+        phrase = sentences[0].slice(0, 50).trim();
+        console.log('[BiasNeutralizer] Extracted phrase from explanation text:', phrase);
+      }
+    }
+    
     explanation = phraseObj.explanation || '';
     neutralAlternative = '';
     phraseType = phraseObj.type || '';

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BiasNeutralizer Analysis History Page - Refactored
  * Manages display and interaction with saved analysis reports
  * 
@@ -38,7 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
     sortLabel: document.querySelector(".sort-label"),
     backButton: document.getElementById("back-button"),
     searchInput: document.getElementById("search-input"),
-    exportButton: document.getElementById("export-button")
+    exportButton: document.getElementById("export-button"),
+    selectAllCheckbox: document.getElementById("select-all-checkbox"),
+    deleteSelectedButton: document.getElementById("delete-selected-button")
   };
 
   // Validate elements
@@ -134,14 +136,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // Not in extension context, show empty state
         history = [];
         render();
-        updateStats();
+        await updateStats();
         return;
       }
       const result = await chrome.storage.local.get(["analysisHistory"]);
       history = Array.isArray(result.analysisHistory) ? result.analysisHistory : [];
       console.log(`[Reports] Loaded ${history.length} reports from storage`);
       render();
-      updateStats();
+      await updateStats();
     } catch (error) {
       console.error("[Reports] Failed to load history:", error);
       showEmptyState();
@@ -215,6 +217,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Mark that initial paint is complete
     initialPaint = false;
 
+    // Reset bulk selection state after rendering
+    if (elements.selectAllCheckbox) {
+      elements.selectAllCheckbox.checked = false;
+      elements.selectAllCheckbox.indeterminate = false;
+    }
+    if (elements.deleteSelectedButton) {
+      elements.deleteSelectedButton.classList.add("hidden");
+    }
+
     console.log(`[Reports] Rendered ${sorted.length} report items (filtered from ${history.length})`);
   }
 
@@ -231,39 +242,43 @@ document.addEventListener("DOMContentLoaded", () => {
     const domain = extractDomain(report.url);
     const safeUrl = sanitizeUrl(report.url);
     const sourceText = escapeHtml(report.source || "cloud");
+    const reportTitle = escapeHtml(report.title || "Untitled Analysis");
 
     div.innerHTML = `
-      <div class="report-header">
-        <div class="report-info">
-          <div class="report-title-wrapper">
-            <span class="report-title">${escapeHtml(report.title || "Untitled Analysis")}</span>
-            <input type="text" class="report-title-input hidden" value="${escapeHtml(report.title || "Untitled Analysis")}" aria-label="Edit report title" />
+      <input type="checkbox" class="report-checkbox" data-report-id="${div.dataset.reportId}" aria-label="Select report: ${reportTitle}" />
+      <div class="report-item-content">
+        <div class="report-header">
+          <div class="report-info">
+            <div class="report-title-wrapper">
+              <span class="report-title">${reportTitle}</span>
+              <input type="text" class="report-title-input hidden" value="${reportTitle}" aria-label="Edit report title" />
+            </div>
+            <div class="report-metadata">
+              <div class="metadata-item">
+                <span class="metadata-icon">📅</span>
+                <span>${dateStr}</span>
+              </div>
+              <div class="metadata-divider"></div>
+              <div class="metadata-item">
+                <span class="metadata-icon">🕐</span>
+                <span>${timeStr}</span>
+              </div>
+              <div class="metadata-divider"></div>
+              <div class="metadata-item">
+                <span class="metadata-icon">🌐</span>
+                <a href="${safeUrl}" class="report-url" target="_blank" rel="noopener noreferrer">${escapeHtml(domain)}</a>
+              </div>
+              <div class="metadata-divider"></div>
+              <div class="metadata-item">
+                <span class="report-source-badge">${sourceText}</span>
+              </div>
+            </div>
           </div>
-          <div class="report-metadata">
-            <div class="metadata-item">
-              <span class="metadata-icon">📅</span>
-              <span>${dateStr}</span>
-            </div>
-            <div class="metadata-divider"></div>
-            <div class="metadata-item">
-              <span class="metadata-icon">🕐</span>
-              <span>${timeStr}</span>
-            </div>
-            <div class="metadata-divider"></div>
-            <div class="metadata-item">
-              <span class="metadata-icon">🌐</span>
-              <a href="${safeUrl}" class="report-url" target="_blank" rel="noopener noreferrer">${escapeHtml(domain)}</a>
-            </div>
-            <div class="metadata-divider"></div>
-            <div class="metadata-item">
-              <span class="report-source-badge">${sourceText}</span>
-            </div>
+          <div class="report-actions">
+            <button class="action-btn view-btn" data-action="view" aria-label="View full report">View</button>
+            <button class="action-btn" data-action="rename" aria-label="Rename report">Rename</button>
+            <button class="action-btn delete-btn" data-action="delete" aria-label="Delete report">Delete</button>
           </div>
-        </div>
-        <div class="report-actions">
-          <button class="action-btn view-btn" data-action="view" aria-label="View full report">View</button>
-          <button class="action-btn" data-action="rename" aria-label="Rename report">Rename</button>
-          <button class="action-btn delete-btn" data-action="delete" aria-label="Delete report">Delete</button>
         </div>
       </div>
     `;
@@ -290,7 +305,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /**
    * Update statistics
    */
-  function updateStats() {
+  async function updateStats() {
     if (!elements.totalReports) return;
 
     // Total reports
@@ -303,19 +318,48 @@ document.addEventListener("DOMContentLoaded", () => {
       elements.thisWeek.textContent = thisWeekCount;
     }
 
-    // Storage used (approximate)
-    try {
-      const storageStr = JSON.stringify(history);
-      const bytes = new Blob([storageStr]).size;
-      const kb = Math.round(bytes / 1024);
-      if (elements.storageUsed) {
-        elements.storageUsed.textContent = `${kb} KB`;
+    // Storage used (accurate when extension API available; otherwise approximate)
+    const canMeasureAccurately = EXT.has && (typeof chrome !== 'undefined') && chrome?.storage?.local?.getBytesInUse;
+    if (elements.storageUsed) elements.storageUsed.textContent = '...';
+
+    const updateApproximate = () => {
+      try {
+        const storageStr = JSON.stringify(history);
+        const bytes = new Blob([storageStr]).size;
+        const kb = Math.round(bytes / 1024);
+        if (elements.storageUsed) {
+          elements.storageUsed.textContent = `~${kb} KB`;
+        }
+      } catch (fallbackError) {
+        console.error("[Reports] Storage fallback calculation error:", fallbackError);
+        if (elements.storageUsed) elements.storageUsed.textContent = "N/A";
       }
-    } catch (error) {
-      console.error("[Reports] Storage calculation error:", error);
-      if (elements.storageUsed) {
-        elements.storageUsed.textContent = "N/A";
+    };
+
+    if (canMeasureAccurately) {
+      try {
+        const bytes = await new Promise((resolve, reject) => {
+          try {
+            chrome.storage.local.getBytesInUse(['analysisHistory'], (result) => {
+              if (chrome.runtime?.lastError) {
+                return reject(chrome.runtime.lastError);
+              }
+              resolve(result || 0);
+            });
+          } catch (err) {
+            reject(err);
+          }
+        });
+        const kb = Math.round((bytes || 0) / 1024);
+        if (elements.storageUsed) {
+          elements.storageUsed.textContent = `${kb} KB`;
+        }
+      } catch (apiError) {
+        console.warn('[Reports] getBytesInUse failed, using approximate storage size:', apiError);
+        updateApproximate();
       }
+    } else {
+      updateApproximate();
     }
 
     console.log(`[Reports] Stats updated: ${history.length} total, ${thisWeekCount} this week`);
@@ -512,7 +556,7 @@ document.addEventListener("DOMContentLoaded", () => {
       reportItem.style.opacity = "0";
       reportItem.style.transform = "translateX(-20px)";
 
-      setTimeout(() => {
+      setTimeout(async () => {
         reportItem.remove();
 
         // Check if list is now empty
@@ -520,12 +564,175 @@ document.addEventListener("DOMContentLoaded", () => {
           showEmptyState();
         }
 
-        updateStats();
+        await updateStats();
       }, 300);
 
     } catch (error) {
       console.error("[Reports] Failed to delete report:", error);
       alert("Failed to delete report. Please try again.");
+    }
+  }
+
+  /**
+   * Update the "Select All" checkbox state based on individual checkboxes
+   */
+  function updateSelectAllState() {
+    if (!elements.selectAllCheckbox || !elements.reportsList) return;
+
+    const visibleCheckboxes = elements.reportsList.querySelectorAll(".report-checkbox");
+    const checkedCheckboxes = elements.reportsList.querySelectorAll(".report-checkbox:checked");
+
+    if (visibleCheckboxes.length === 0) {
+      // No reports visible
+      elements.selectAllCheckbox.checked = false;
+      elements.selectAllCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === 0) {
+      // None checked
+      elements.selectAllCheckbox.checked = false;
+      elements.selectAllCheckbox.indeterminate = false;
+    } else if (checkedCheckboxes.length === visibleCheckboxes.length) {
+      // All checked
+      elements.selectAllCheckbox.checked = true;
+      elements.selectAllCheckbox.indeterminate = false;
+    } else {
+      // Some checked
+      elements.selectAllCheckbox.checked = false;
+      elements.selectAllCheckbox.indeterminate = true;
+    }
+  }
+
+  /**
+   * Update the visibility of the "Delete Selected" button
+   */
+  function updateDeleteButtonVisibility() {
+    if (!elements.deleteSelectedButton || !elements.reportsList) return;
+
+    const checkedCheckboxes = elements.reportsList.querySelectorAll(".report-checkbox:checked");
+
+    if (checkedCheckboxes.length > 0) {
+      // Show button and update text with count
+      elements.deleteSelectedButton.classList.remove("hidden");
+      const buttonLabel = elements.deleteSelectedButton.querySelector(".button-label");
+      if (buttonLabel) {
+        buttonLabel.textContent = `Delete Selected (${checkedCheckboxes.length})`;
+      }
+    } else {
+      // Hide button
+      elements.deleteSelectedButton.classList.add("hidden");
+    }
+  }
+
+  /**
+   * Handle "Select All" checkbox change
+   */
+  function handleSelectAll(event) {
+    if (!elements.reportsList) return;
+
+    const isChecked = event.target.checked;
+    const visibleCheckboxes = elements.reportsList.querySelectorAll(".report-checkbox");
+
+    // Check or uncheck all visible checkboxes
+    visibleCheckboxes.forEach(checkbox => {
+      checkbox.checked = isChecked;
+    });
+
+    console.log(`[Reports] Select All: ${isChecked ? "checked" : "unchecked"} ${visibleCheckboxes.length} reports`);
+
+    // Update button visibility
+    updateDeleteButtonVisibility();
+  }
+
+  /**
+   * Handle individual checkbox change
+   */
+  function handleIndividualCheckboxChange(event) {
+    // Update "Select All" state
+    updateSelectAllState();
+
+    // Update delete button visibility
+    updateDeleteButtonVisibility();
+
+    const reportId = event.target.dataset.reportId;
+    console.log(`[Reports] Checkbox toggled for report: ${reportId}`);
+  }
+
+  /**
+   * Handle bulk delete action
+   */
+  async function handleBulkDelete() {
+    if (!elements.reportsList) return;
+
+    const checkedCheckboxes = elements.reportsList.querySelectorAll(".report-checkbox:checked");
+
+    if (checkedCheckboxes.length === 0) {
+      console.warn("[Reports] No reports selected for deletion");
+      return;
+    }
+
+    // Get report IDs
+    const reportIds = Array.from(checkedCheckboxes).map(checkbox => checkbox.dataset.reportId);
+    const count = reportIds.length;
+
+    // Confirm deletion
+    const confirmed = confirm(
+      `Are you sure you want to delete ${count} selected report${count > 1 ? 's' : ''}? This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      console.log("[Reports] Bulk delete cancelled");
+      return;
+    }
+
+    console.log(`[Reports] Deleting ${count} reports:`, reportIds);
+
+    // Remove reports from history array
+    history = history.filter(report => {
+      const id = String(report.id || report.timestamp);
+      return !reportIds.includes(id);
+    });
+
+    // Save updated history (guarded)
+    if (!EXT.has) {
+      console.warn("[Reports] Cannot delete - not in extension context");
+      return;
+    }
+
+    try {
+      await chrome.storage.local.set({ analysisHistory: history });
+      console.log(`[Reports] Successfully deleted ${count} reports`);
+
+      // Remove items from DOM with animation
+      checkedCheckboxes.forEach(checkbox => {
+        const reportItem = checkbox.closest(".report-item");
+        if (reportItem) {
+          reportItem.style.opacity = "0";
+          reportItem.style.transform = "translateX(-20px)";
+        }
+      });
+
+      // Wait for animation, then re-render
+      setTimeout(async () => {
+        render();
+        await updateStats();
+
+        // Reset selection state
+        if (elements.selectAllCheckbox) {
+          elements.selectAllCheckbox.checked = false;
+          elements.selectAllCheckbox.indeterminate = false;
+        }
+        if (elements.deleteSelectedButton) {
+          elements.deleteSelectedButton.classList.add("hidden");
+        }
+
+        // Check if list is now empty
+        if (history.length === 0) {
+          showEmptyState();
+        }
+      }, 300);
+
+    } catch (error) {
+      console.error("[Reports] Failed to bulk delete reports:", error);
+      alert("Failed to delete reports. Please try again.");
     }
   }
 
@@ -576,8 +783,31 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.reportsList.addEventListener("click", handleAction);
   }
 
+  // Bulk selection event listeners
+  if (elements.selectAllCheckbox) {
+    elements.selectAllCheckbox.addEventListener("change", handleSelectAll);
+  }
+
+  if (elements.deleteSelectedButton) {
+    elements.deleteSelectedButton.addEventListener("click", handleBulkDelete);
+  }
+
+  // Event delegation for individual checkboxes
+  if (elements.reportsList) {
+    elements.reportsList.addEventListener("change", (event) => {
+      if (event.target.classList.contains("report-checkbox")) {
+        handleIndividualCheckboxChange(event);
+      }
+    });
+  }
+
   // Initialize
   loadHistory();
 
   console.log("[Reports] Analysis History page ready");
 });
+
+
+
+
+

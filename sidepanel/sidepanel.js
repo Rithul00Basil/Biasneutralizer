@@ -27,8 +27,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // On error, continue with normal flow (fail-safe)
   }
 
-  // === sidepanel rating validation + model label helpers ===
-   function normalizeModeratorSections(markdown) {
+  // === DEPRECATED: Rating validation now handled in background.js ===
+  // This function is kept for backward compatibility but is no longer called
+  // All normalization and extraction happens at source (background.js)
+  function normalizeModeratorSections(markdown) {
     const allowed = new Set(['Center','Lean Left','Lean Right','Strong Left','Strong Right','Unclear']);
     let out = String(markdown || '');
     out = out.replace(/\[RATING\]\s*:/gi,'Rating:').replace(/\[CONFIDENCE\]\s*:/gi,'Confidence:');
@@ -83,6 +85,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   // === on-device quick-scan helpers ===
   function safeJSON(x, fallback = null) {
     try { return JSON.parse(x); } catch { return fallback; }
+  }
+
+  function countWords(text) {
+    return (text || '').trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  function isValidBalancedExcerpt(example) {
+    const wordCount = countWords(example);
+    return wordCount >= 5 && wordCount <= 15;
+  }
+
+  async function ensureBalancedExamples(elements, sourceText, fetchSnippet) {
+    if (!Array.isArray(elements) || elements.length === 0) return [];
+    const resolved = [];
+
+    for (const element of elements) {
+      if (!element || typeof element !== 'object') continue;
+
+      let example = typeof element.example === 'string' ? element.example.trim() : '';
+
+      if (!isValidBalancedExcerpt(example) && typeof fetchSnippet === 'function') {
+        try {
+          const candidate = await fetchSnippet(element, sourceText);
+          if (typeof candidate === 'string') {
+            example = candidate.trim();
+          }
+        } catch (error) {
+          console.warn('[BiasNeutralizer] Failed to fetch balanced snippet (on-device):', error);
+        }
+      }
+
+      if (isValidBalancedExcerpt(example)) {
+        resolved.push({ ...element, example });
+      } else {
+        console.warn('[BiasNeutralizer] Dropping balanced element without valid excerpt (on-device):', element);
+      }
+    }
+
+    return resolved;
   }
 
   function deriveQuickModeratorMarkdown(contextJSON, languageJSON, hunterJSON, skepticJSON, quoteJSON) {
@@ -604,20 +645,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[BiasNeutralizer] source:', source);
     console.log('[BiasNeutralizer] articleInfo:', articleInfo);
 
-    // Normalize analysis payload to a clean string and map bracket labels early
+    // Data is already normalized at source (background.js)
+    // Extract text and pre-extracted fields
     let normalized = (typeof analysisData === 'string')
       ? analysisData
       : (analysisData?.text || analysisData?.analysis || JSON.stringify(analysisData, null, 2));
-    normalized = String(normalized)
-      .replace(/\[RATING\]\s*:/gi, 'Rating:')
-      .replace(/\[CONFIDENCE\]\s*:/gi, 'Confidence:');
-
-    // Validate/normalize moderator sections for rating and confidence
-    normalized = normalizeModeratorSections(normalized);
 
     const resultToStore = {
       id: finalReportId, // Add unique ID for history
-      summary: normalized, // always a string
+      summary: normalized, // already normalized from background
       source: source,
       url: articleInfo.url || '',
       title: articleInfo.title || 'Untitled Article',
@@ -628,7 +664,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         contentLength: articleInfo.fullText?.length || 0,
         paragraphCount: articleInfo.paragraphs?.length || 0,
         fullText: articleInfo.fullText || '',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        // Store pre-extracted from background for fast rendering
+        extractedRating: analysisData?.extractedRating || null,
+        extractedConfidence: analysisData?.extractedConfidence || null
       },
     };
 
@@ -637,6 +676,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[BiasNeutralizer] resultToStore.summary:', resultToStore.summary);
     console.log('[BiasNeutralizer] resultToStore.raw:', resultToStore.raw);
     console.log('[BiasNeutralizer] Full resultToStore:', JSON.stringify(resultToStore, null, 2));
+
+    // ===== WAIT FOR SUMMARY TO COMPLETE =====
+    // Give the summary generation 30 seconds to complete
+    let summaryAttempts = 0;
+    const maxSummaryWait = 30; // 30 seconds max
+    
+    while (summaryAttempts < maxSummaryWait) {
+      const summaryStorage = await safeStorageGet(['lastSummary']);
+      const lastSummary = summaryStorage?.lastSummary;
+      
+      if (lastSummary && lastSummary.status === 'complete') {
+        // Summary is ready! Embed it in the report
+        resultToStore.articleSummary = lastSummary.data;
+        resultToStore.summaryUsedCloud = lastSummary.usedCloudFallback || false;
+        console.log('[BiasNeutralizer] ✅ Summary embedded in report');
+        break;
+      }
+      
+      if (lastSummary && lastSummary.status === 'error') {
+        console.warn('[BiasNeutralizer] ⚠️ Summary failed, saving report without it');
+        break;
+      }
+      
+      // Wait 1 second before checking again
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      summaryAttempts++;
+    }
+    
+    if (summaryAttempts >= maxSummaryWait) {
+      console.warn('[BiasNeutralizer] ⚠️ Summary timeout, saving report without it');
+    }
+    // ===== END WAIT FOR SUMMARY =====
 
     // Read existing history
     const storage = await safeStorageGet(['analysisHistory']);
@@ -675,71 +746,111 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ========================================
 
   /**
-   * Triggers a separate, on-device summary generation process.
+   * Triggers a separate summary generation process.
+   * Tries on-device first, falls back to cloud if unavailable.
    * This runs independently of the main bias scan.
    */
   async function triggerOnDeviceSummary(articleContent) {
-    console.log('[BiasNeutralizer] Starting independent on-device summary...');
+    console.log('[BiasNeutralizer] Starting independent summary generation...');
 
     // Save a placeholder immediately so the UI can show a "generating" state
     await safeStorageSet({ lastSummary: { status: 'generating' } });
 
-    if (!('Summarizer' in self)) {
-      await safeStorageSet({ lastSummary: { status: 'error', data: 'Summarizer API not supported.' } });
-      return;
-    }
+    // Try on-device summarization first
+    if ('Summarizer' in self) {
+      try {
+        const availability = await Summarizer.availability();
+        if (availability !== 'unavailable') {
+          const summarizer = await Summarizer.create({
+            type: 'key-points',
+            format: 'markdown',
+            length: 'short'
+          });
 
-    try {
-      const availability = await Summarizer.availability();
-      if (availability === 'unavailable') {
-        throw new Error('On-device model is not available on this device.');
-      }
-
-      const summarizer = await Summarizer.create({
-        type: 'key-points',
-        format: 'markdown',
-        length: 'short' // Changed from 'long' to 'short' for speed
-      });
-
-      const fullText = articleContent.fullText || '';
-      let summaryMarkdown = '';
-      if (fullText.length > 5000) {
-        // Chunk if >5k chars
-        const chunks = fullText.match(/.{1,2000}/g); // Rough chunking
-        let chunkSummaries = [];
-        for (const chunk of chunks) {
-          const chunkSummary = await summarizer.summarize(
-            chunk,
+          const fullText = (articleContent.fullText || '').slice(0, 2000); // Only first 2k chars
+          const summaryMarkdown = await summarizer.summarize(
+            fullText,
             {
-              context: 'Generate concise key points for a news article chunk. 2-3 bullet points maximum.'
+              context: 'Generate concise key points for a news article. 3-5 bullet points maximum.'
             }
           );
-          chunkSummaries.push(chunkSummary);
+
+          // Save the successful on-device summary
+          await safeStorageSet({ 
+            lastSummary: { 
+              status: 'complete', 
+              data: summaryMarkdown, 
+              usedCloudFallback: false 
+            } 
+          });
+          console.log('[BiasNeutralizer] ✅ On-device summary complete and saved.');
+          return;
         }
-        // Optionally, summarize the summaries for a final summary
-        const combinedSummary = chunkSummaries.join('\n');
-        summaryMarkdown = await summarizer.summarize(
-          combinedSummary,
-          {
-            context: 'Combine and condense the following bullet points into a concise summary for a news article. 3-5 bullet points maximum.'
-          }
-        );
-      } else {
-        summaryMarkdown = await summarizer.summarize(
-          fullText.slice(0, 6000),  // Only first 6k chars for speed
-          {
-            context: 'Generate concise key points for a news article. 3-5 bullet points maximum.'
-          }
-        );
+      } catch (error) {
+        console.warn('[BiasNeutralizer] On-device summary failed, trying cloud fallback:', error);
+      }
+    }
+
+    // Cloud fallback: Use Gemini API
+    console.log('[BiasNeutralizer] Using cloud fallback for summary...');
+    try {
+      const settings = await safeStorageGet(['geminiApiKey']);
+      const apiKey = settings?.geminiApiKey?.trim();
+      
+      if (!apiKey) {
+        throw new Error('Gemini API key not configured');
       }
 
-      // Save the successful summary
-      await safeStorageSet({ lastSummary: { status: 'complete', data: summaryMarkdown } });
-      console.log('[BiasNeutralizer] On-device summary complete and saved.');
+      const fullText = (articleContent.fullText || '').slice(0, 2000); // Only first 2k chars
+      const prompt = `Summarize the following news article into 3-5 concise bullet points in markdown format. Focus on key facts and main points only.
+
+Article:
+${fullText}`;
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 500
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const summaryText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!summaryText) {
+        throw new Error('No summary returned from API');
+      }
+
+      await safeStorageSet({ 
+        lastSummary: { 
+          status: 'complete', 
+          data: summaryText, 
+          usedCloudFallback: true 
+        } 
+      });
+      console.log('[BiasNeutralizer] ✅ Cloud summary complete and saved.');
 
     } catch (error) {
-      console.error('Independent summary failed:', error);
-      await safeStorageSet({ lastSummary: { status: 'error', data: error.message } });
+      console.error('[BiasNeutralizer] Summary generation failed (both on-device and cloud):', error);
+      await safeStorageSet({ 
+        lastSummary: { 
+          status: 'error', 
+          data: `Summary generation failed: ${error.message}` 
+        } 
+      });
     }
   }
 
@@ -805,11 +916,27 @@ document.addEventListener('DOMContentLoaded', async () => {
           session.prompt(quotePrompt)
         ]);
 
+        const rawSkeptic = safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' });
+        let balancedElements = [];
+        if (Array.isArray(rawSkeptic.balanced_elements) && rawSkeptic.balanced_elements.length) {
+          balancedElements = await ensureBalancedExamples(
+            rawSkeptic.balanced_elements,
+            chunk,
+            async (element, chunkText) => {
+              const snippetPrompt = AgentPrompts.createBalancedSnippetPrompt(contextData, chunkText, element);
+              const snippetResponse = await session.prompt(snippetPrompt);
+              const snippetJSON = safeJSON(snippetResponse, { example: null });
+              return typeof snippetJSON.example === 'string' ? snippetJSON.example.trim() : '';
+            }
+          );
+        }
+        const skeptic = { ...rawSkeptic, balanced_elements: balancedElements };
+
         return {
           context: contextJSON,
           language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
           hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
-          skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' }),
+          skeptic,
           quotes: safeJSON(quoteRes, { quotes: [], quotes_with_loaded_terms: 0, total_quotes: 0, confidence: 'High' })
         };
       });
@@ -910,6 +1037,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     setView('scanning');
     startStatusUpdates();
 
+    // --- Immediately trigger the separate on-device summary (runs independently) ---
+    triggerOnDeviceSummary(articleContent);
+    console.log('[BiasNeutralizer] ✅ Summary generation started in background');
+
     console.log('[BiasNeutralizer] Sending scan request to background script');
     console.log('[BiasNeutralizer] Article content length:', articleContent.fullText?.length);
 
@@ -988,6 +1119,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     showError('Cannot perform scan: Chrome APIs unavailable');
     return;
   }
+  
+  // Clear old summary before starting new scan
+  await safeStorageSet({
+    lastSummary: {
+      status: 'generating',
+      data: null,
+      timestamp: Date.now()
+    }
+  });
+  console.log('[BiasNeutralizer] ✅ Cleared old summary, ready for new scan');
   
   try {
     const settings = await safeStorageGet(['privateMode']);
@@ -1291,3 +1432,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkGPU();
   console.log('[BiasNeutralizer] Side panel ready');
 });
+
+
+
+
+
+

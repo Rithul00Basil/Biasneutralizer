@@ -23,6 +23,114 @@
   padding: 0 1rem;
 }
 
+.flags-step .setup-option-header {
+  justify-content: flex-start;
+}
+
+.flags-description {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-white-80);
+  margin: 0;
+}
+
+.flags-link {
+  background: none;
+  border: none;
+  color: var(--accent-orange);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  transition: color 0.2s ease;
+}
+
+.flags-link:hover {
+  color: var(--accent-orange-hover);
+}
+
+.flags-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.flags-list li {
+  position: relative;
+  font-size: 0.88rem;
+  letter-spacing: -0.01em;
+  color: var(--text-white-80);
+}
+
+.flag-copy-btn {
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  color: var(--text-white-80);
+  font-size: 0.88rem;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flag-copy-btn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-white-100);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.flags-restart-note {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  color: var(--text-white-90);
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+}
+
+.flags-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.flags-complete {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.flags-complete-message {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-white-90);
+}
+
+.flags-status-message {
+  font-size: 0.85rem;
+  color: var(--text-white-80);
+  text-align: center;
+}
+
+.flags-status-message.error { color: #f87171; }
+.flags-status-message.success { color: #22c55e; }
+.flags-status-message.warning { color: #facc15; }
+
+.step-hidden {
+  display: none;
+}
+
 /* Setup Cards */
 .setup-card {
   width: 100%;

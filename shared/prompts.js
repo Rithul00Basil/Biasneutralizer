@@ -1,4 +1,4 @@
-// prompts.js — Single source of truth for all agent prompts
+﻿// prompts.js â€” Single source of truth for all agent prompts
 // MV3 module-friendly: import as `import { AgentPrompts } from '../prompts/prompts.js'`
 
 export const AgentPrompts = {
@@ -29,7 +29,7 @@ Rules:
 - Do NOT classify as opinion merely due to adjectives, tone, or narrative structure
 - Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
 - Estimate quoted material: approximate % of words inside quotation marks
-  — Low = 0—30%, Medium = 31—60%, High = 61—100%
+  â€” Low = 0â€”30%, Medium = 31â€”60%, High = 61â€”100%
 
 Output ONLY this JSON (no other text):
 {
@@ -131,7 +131,7 @@ Flag ONLY if falsifiable criteria met:
 - Editorial insertion: Adjectives judging motives/morality
 
 Thresholds:
-- Need —2 INDEPENDENT indicators (different types/examples) OR
+- Need â€”2 INDEPENDENT indicators (different types/examples) OR
 - 1 High-strength indicator corroborated by story structure (headline/lead/positioning)
 
 Output ONLY this JSON:
@@ -183,11 +183,20 @@ Scoring (0-10):
 - 8 = strong balance with timely counterpoints and proportionate sourcing
 - 10 = exemplary balance, symmetric scrutiny
 
+MANDATORY excerpt rules:
+- Each balanced_element MUST include an "example" field.
+- The example must be a direct excerpt from the article, 5-15 consecutive words copied verbatim (preserve punctuation and capitalization).
+- If you cannot find a compliant excerpt, omit that balanced element entirely instead of paraphrasing.
+
 Output ONLY this JSON:
 {
   "balance_score": NUMBER_0_TO_10,
   "balanced_elements": [
-    { "type": "Counterpoint/DataDisclosure/Attribution/Placement", "explanation": "short note" }
+    { 
+      "type": "Counterpoint/DataDisclosure/Attribution/Placement", 
+      "example": "exact phrase or sentence from article showing balance",
+      "explanation": "short note on why this demonstrates balance" 
+    }
   ],
   "confidence": "High/Medium/Low"
 }
@@ -197,6 +206,35 @@ Please analyze the article provided in the <article_text> tags below.
 <article_text>
 ${textToAnalyze}
 </article_text>
+`;
+  },
+
+  createBalancedSnippetPrompt: (contextData, textToAnalyze, element) => {
+    const explanation = (element?.explanation || '').slice(0, 500);
+    const type = element?.type || 'Unknown';
+    return `
+**Return only a JSON object. No prose and no Markdown/code fences.**
+
+Local Chunk Context: ${contextData}
+
+Task: extract a direct excerpt that demonstrates the balanced element described below.
+
+Excerpt requirements:
+- Quote directly from the article text (no paraphrasing).
+- Provide 5-15 consecutive words copied exactly with punctuation and casing.
+- If no compliant excerpt exists, respond with {"example": null}.
+
+Balanced element details:
+Type: ${type}
+Explanation: ${explanation}
+
+Article text:
+<article_text>
+${textToAnalyze}
+</article_text>
+
+Respond with:
+{"example": "<exact excerpt or null>"}
 `;
   },
 
@@ -660,12 +698,35 @@ For EACH charge, you must:
    - **INCONCLUSIVE**: Evidence is mixed, both sides have valid points
 
 5. **Determine Overall Bias Rating**:
-   - Count SUSTAINED charges and their severity:
-     * 0 sustained charges = **Center**
-     * 1 Low severity sustained = **Center** (insufficient threshold)
-     * 1 Medium or 1 High severity sustained = **Lean Left/Right** (determine direction from charge type)
-     * 2+ Medium OR 1 High + 1 Medium sustained = **Strong Left/Right**
-   - If article type is Opinion/Analysis = **Unclear** (opinions are inherently biased)
+   Use this RATING CALIBRATION GUIDE to ensure consistency:
+
+   **Strong Left/Right:**
+   - Multiple HIGH-severity sustained charges
+   - Systematic pattern across entire article
+   - Structural manipulation confirmed by Investigator
+   - Example: 80%+ of loaded language front-loaded AND unbalanced sourcing AND selective framing
+
+   **Lean Left/Right:**
+   - 1-2 MEDIUM-severity sustained charges
+   - Isolated instances of judgmental language
+   - Minor framing issues without structural manipulation
+   - Example: A few judgmental verbs like "boast" but otherwise balanced reporting
+
+   **Center:**
+   - No sustained charges OR all charges dismissed
+   - Balanced sourcing and context provided
+   - Any loaded language is minor and not systematic
+
+   **Unclear:**
+   - Evidence is conflicting or insufficient
+   - Equal indicators pointing both directions
+   - Cannot determine direction with confidence
+   - Article type is Opinion/Analysis (opinions are inherently biased)
+
+   **IMPORTANT RULES:**
+   - Default to the LOWER rating when in doubt between two levels
+   - If evidence supports both "Strong Left" and "Lean Left", choose "Lean Left"
+   - Reserve "Strong" ratings for truly systematic, structural bias only
    - If Investigator found strong counter-evidence to all charges = **Center** (override prosecution)
 
 6. **Set Confidence**:
@@ -732,6 +793,10 @@ YOU MUST START YOUR RESPONSE WITH EXACTLY THIS:
 - **Overall Bias Assessment:** 
 - **Confidence:** 
 - **Key Observation:** 
+
+CRITICAL: Do NOT add any plaintext "Rating:" or "Confidence:" lines at the end of your report.
+The rating is ONLY extracted from the "Overall Bias Assessment" field in your markdown.
+Any additional plaintext ratings will be ignored and may cause inconsistencies.
 
 </critical_instructions>
 `,
@@ -834,3 +899,4 @@ ${deepSection}
 `;
   }
 };
+
