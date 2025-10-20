@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   'use strict';
 
   // ========================================
@@ -42,13 +42,13 @@
         if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
           const note = document.createElement('span');
           note.className = 'cloud-fallback-note';
-          note.textContent = 'ℹ️ Cloud-generated summary';
+          note.textContent = 'â„¹ï¸ Cloud-generated summary';
           note.title = 'Summary generated using Gemini API (on-device model unavailable)';
           cardHeader.appendChild(note);
         }
       }
       
-      console.log('[Results] ✅ Summary loaded from embedded report data');
+      console.log('[Results] âœ… Summary loaded from embedded report data');
       return;
     }
     
@@ -79,15 +79,15 @@
           if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
             const note = document.createElement('span');
             note.className = 'cloud-fallback-note';
-            note.textContent = 'ℹ️ Cloud-generated summary';
+            note.textContent = 'â„¹ï¸ Cloud-generated summary';
             note.title = 'Summary generated using Gemini API (on-device model unavailable)';
             cardHeader.appendChild(note);
           }
         }
         
-        console.log('[Results] ✅ Summary loaded from lastSummary (active scan)');
+        console.log('[Results] âœ… Summary loaded from lastSummary (active scan)');
       } else if (summaryData.status === 'generating') {
-        summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
+        summarySection.innerHTML = '<p class="placeholder-text">â³ Generating summary...</p>';
       } else if (summaryData.status === 'error') {
         clearInterval(pollInterval);
         summarySection.innerHTML = `<p class="placeholder-text">Summary generation failed: ${summaryData.data}</p>`;
@@ -196,7 +196,7 @@
     html = html.replace(/_(.+?)_/g, '<em>$1</em>');
 
     // Unordered lists
-    html = html.replace(/^[-•*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^[-â€¢*] (.+)$/gm, '<li>$1</li>');
     html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
     html = html.replace(/<\/ul>\s*<ul>/g, ''); // Merge consecutive lists
 
@@ -314,11 +314,11 @@
       if (assistantOverlay) {
         assistantOverlay.style.display = 'none';
         assistantOverlay.classList.remove('visible');
-        console.log('[Results] ✅ Hidden #assistant-overlay (display + class)');
+        console.log('[Results] âœ… Hidden #assistant-overlay (display + class)');
       }
 
       document.body.style.pointerEvents = 'auto';
-      console.log('[Results] ✅ Set pointer-events to auto');
+      console.log('[Results] âœ… Set pointer-events to auto');
     } catch (err) {
       console.error('[Results] Error initializing overlays:', err);
     }
@@ -481,13 +481,13 @@
       const loadingState = document.getElementById('loading-state');
       if (loadingState) {
         loadingState.classList.add('hidden');
-        console.log('[Results] ✅ Ensured #loading-state is hidden');
+        console.log('[Results] âœ… Ensured #loading-state is hidden');
       }
   
       const mainContent = document.getElementById('main-content');
       if (mainContent) {
         mainContent.classList.remove('hidden');
-        console.log('[Results] ✅ Ensured #main-content is visible');
+        console.log('[Results] âœ… Ensured #main-content is visible');
       }
     }
   }
@@ -495,8 +495,8 @@
   function renderEmpty() {
     els.title.textContent = 'No analysis yet';
     els.title.href = '#';
-    els.domain.textContent = '—';
-    els.time.textContent = '—';
+    els.domain.textContent = 'â€”';
+    els.time.textContent = 'â€”';
     els.source.hidden = true;
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
@@ -528,8 +528,8 @@
       els.title.removeAttribute('target');
       els.title.removeAttribute('rel');
     }
-    els.domain.textContent = domain || '—';
-    els.time.textContent = timestamp ? formatTime(timestamp) : '—';
+    els.domain.textContent = domain || 'â€”';
+    els.time.textContent = timestamp ? formatTime(timestamp) : 'â€”';
     if (source) { 
       els.source.textContent = source; 
       els.source.hidden = false; 
@@ -546,7 +546,7 @@
     
     let md = normalizeModeratorSections(summaryText);
     // Remove truncation - let full analysis display
-    // if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
+    // if (md.length > 200000) md = md.slice(0, 200000) + '\n\nâ€¦';
 
     await parseAndRenderAnalysis(md, raw);
 
@@ -555,13 +555,10 @@
       biasHeroEl.classList.remove('initially-hidden');
     }
     
-    // Use pre-extracted from storage if available
-    const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
-    const storedRating = analysisData?.extractedRating || null;
-    const storedConfidence = analysisData?.extractedConfidence || null;
-    const extracted = extractBiasRating(md, storedRating, storedConfidence);
+    const extracted = extractBiasRating(md, data);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
+    console.log('[BiasNeutralizer Results] Final bias rating resolved:', extracted);
     
     if (ratingEl) {
       ratingEl.style.opacity = '0';
@@ -601,19 +598,19 @@
       const mainContent = document.getElementById('main-content');
       if (mainContent) {
         mainContent.classList.remove('hidden');
-        console.log('[Results] ✅ Removed hidden class from #main-content');
+        console.log('[Results] âœ… Removed hidden class from #main-content');
       } else {
-        console.error('[Results] ❌ #main-content element not found!');
+        console.error('[Results] âŒ #main-content element not found!');
       }
       
       // Ensure loading state is hidden (if it still exists)
       const loadingState = document.getElementById('loading-state');
       if (loadingState) {
         loadingState.classList.add('hidden');
-        console.log('[Results] ✅ Hidden #loading-state');
+        console.log('[Results] âœ… Hidden #loading-state');
       }
     } catch (err) {
-      console.error('[Results] ❌ Error revealing main content:', err);
+      console.error('[Results] âŒ Error revealing main content:', err);
     }
   }
 
@@ -660,6 +657,8 @@
       out.source = (typeof d.source === 'string' && d.source.trim().length) ? d.source.trim().slice(0, 120) : '';
       out.timestamp = (typeof d.timestamp === 'number' && isFinite(d.timestamp)) ? d.timestamp : 0;
       out.raw = (typeof d.raw === 'object' || typeof d.raw === 'string') ? d.raw : null;
+      out.extractedRating = typeof d.extractedRating === 'string' ? d.extractedRating.trim() : (d.extractedRating ?? null);
+      out.extractedConfidence = typeof d.extractedConfidence === 'string' ? d.extractedConfidence.trim() : (d.extractedConfidence ?? null);
       
       console.log('[BiasNeutralizer Results] sanitizeAnalysisData output:', out);
     } catch (e) {
@@ -670,6 +669,8 @@
       out.source = '';
       out.timestamp = 0;
       out.raw = null;
+      out.extractedRating = null;
+      out.extractedConfidence = null;
     }
     return out;
   }
@@ -684,43 +685,91 @@
     const match = text.match(/Confidence:\s*([^\n]+)/i);
     return match ? match[1].trim() : 'Medium';
   }
+  function extractBiasRating(text, analysisRecord = null) {
+    let foundRating = null;
+    let foundConfidence = null;
 
-  function extractBiasRating(text, storedRating = null, storedConfidence = null) {
-    // Priority 1: Use pre-extracted from storage
-    if (storedRating && storedConfidence) {
-      console.log('[BiasNeutralizer] ✅ Using pre-extracted rating:', { rating: storedRating, confidence: storedConfidence });
-      return {
-        rating: storedRating,
-        confidence: storedConfidence
-      };
+    const ratingCandidates = [
+      { value: analysisRecord?.extractedRating, path: 'analysisRecord.extractedRating' },
+      { value: analysisRecord?.raw?.extractedRating, path: 'analysisRecord.raw.extractedRating' },
+      { value: analysisRecord?.raw?.analysis?.extractedRating, path: 'analysisRecord.raw.analysis.extractedRating' },
+    ];
+
+    for (const candidate of ratingCandidates) {
+      if (typeof candidate.value === 'string' && candidate.value.trim()) {
+        foundRating = candidate.value.trim();
+        console.log('[BiasNeutralizer Results] Using stored rating from', candidate.path, ':', foundRating);
+        break;
+      }
     }
 
-    // Priority 2: Extract from text
-    if (!text || typeof text !== 'string') {
-      return {
-        rating: 'Unknown',
-        confidence: 'Unknown'
-      };
+    if (!foundRating) {
+      console.log('[BiasNeutralizer Results] Stored rating not found; will attempt to parse from text.');
     }
-    
-    try {
-      const rating = extractRating(text);
-      const confidence = extractConfidence(text);
-      
-      console.log('[BiasNeutralizer] ✅ Extracted rating from text:', { rating, confidence });
-      return {
-        rating: rating,
-        confidence: confidence
-      };
-    } catch (e) {
-      console.warn('[BiasNeutralizer] Failed to extract rating:', e);
+
+    const confidenceCandidates = [
+      { value: analysisRecord?.extractedConfidence, path: 'analysisRecord.extractedConfidence' },
+      { value: analysisRecord?.raw?.extractedConfidence, path: 'analysisRecord.raw.extractedConfidence' },
+      { value: analysisRecord?.raw?.analysis?.extractedConfidence, path: 'analysisRecord.raw.analysis.extractedConfidence' },
+    ];
+
+    for (const candidate of confidenceCandidates) {
+      if (typeof candidate.value === 'string' && candidate.value.trim()) {
+        foundConfidence = candidate.value.trim();
+        console.log('[BiasNeutralizer Results] Using stored confidence from', candidate.path, ':', foundConfidence);
+        break;
+      }
     }
-    
-    // Fallback
-    console.warn('[BiasNeutralizer] ⚠️ Could not extract rating, returning Unknown');
-    return { rating: 'Unknown', confidence: 'Unknown' };
+
+    if (!foundConfidence) {
+      console.log('[BiasNeutralizer Results] Stored confidence not found; will attempt to parse from text.');
+    }
+
+    const textIsString = typeof text === 'string' && text.trim().length;
+
+    let finalRating = foundRating;
+    if (!finalRating) {
+      if (textIsString) {
+        try {
+          const parsedRating = extractRating(text);
+          if (parsedRating && parsedRating.trim()) {
+            finalRating = parsedRating.trim();
+            console.log('[BiasNeutralizer Results] Rating parsed from text:', finalRating);
+          }
+        } catch (err) {
+          console.warn('[BiasNeutralizer Results] Failed to parse rating from text:', err);
+        }
+      }
+      if (!finalRating) {
+        finalRating = 'Unclear';
+        console.warn('[BiasNeutralizer Results] Falling back to default rating:', finalRating);
+      }
+    }
+
+    let finalConfidence = foundConfidence;
+    if (!finalConfidence) {
+      if (textIsString) {
+        try {
+          const parsedConfidence = extractConfidence(text);
+          if (parsedConfidence && parsedConfidence.trim()) {
+            finalConfidence = parsedConfidence.trim();
+            console.log('[BiasNeutralizer Results] Confidence parsed from text:', finalConfidence);
+          }
+        } catch (err) {
+          console.warn('[BiasNeutralizer Results] Failed to parse confidence from text:', err);
+        }
+      }
+      if (!finalConfidence) {
+        finalConfidence = 'Medium';
+        console.warn('[BiasNeutralizer Results] Falling back to default confidence:', finalConfidence);
+      }
+    }
+
+    return {
+      rating: finalRating,
+      confidence: finalConfidence,
+    };
   }
-
   // ========================================
   // PARSE AND RENDER ANALYSIS
   // ========================================
@@ -949,7 +998,7 @@
       }
       
       if (currentSection) {
-        const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
+        const bulletMatch = trimmed.match(/^[-â€¢*]\s+(.+)$/);
         if (bulletMatch) {
           currentItems.push(bulletMatch[1].trim());
         } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
@@ -989,7 +1038,7 @@
       examples = raw.languageAnalysis.slice(0, 5);
     } else {
       examples = items.slice(0, 5).map(item => {
-        const arrowMatch = item.match(/["'](.+?)["']\s*[→'-]\s*(.+)/);
+        const arrowMatch = item.match(/["'](.+?)["']\s*[â†’'-]\s*(.+)/);
         if (arrowMatch) {
           return {
             phrase: arrowMatch[1],
@@ -1091,7 +1140,7 @@
         
         const prosecutorTitle = document.createElement('div');
         prosecutorTitle.className = 'tribunal-section-title';
-        prosecutorTitle.textContent = '⚡ Prosecutor\'s Evidence';
+        prosecutorTitle.textContent = 'âš¡ Prosecutor\'s Evidence';
         prosecutorSection.appendChild(prosecutorTitle);
         
         const evidenceList = document.createElement('ul');
@@ -1113,7 +1162,7 @@
         
         const defenseTitle = document.createElement('div');
         defenseTitle.className = 'tribunal-section-title';
-        defenseTitle.textContent = "🛡️ Defense's Rebuttal";
+        defenseTitle.textContent = "ðŸ›¡ï¸ Defense's Rebuttal";
         defenseSection.appendChild(defenseTitle);
         
         const rebuttalContent = document.createElement('p');
@@ -1142,7 +1191,7 @@
         
         const investigatorTitle = document.createElement('div');
         investigatorTitle.className = 'tribunal-section-title';
-        investigatorTitle.textContent = "🔬 Investigator's Facts";
+        investigatorTitle.textContent = "ðŸ”¬ Investigator's Facts";
         investigatorSection.appendChild(investigatorTitle);
         
         const factsContent = document.createElement('p');
@@ -1249,7 +1298,7 @@
         const jb = document.createElement('div');
         jb.className = 'tribunal-section-content';
         const ruling = verdict.ruling ? `<strong>${verdict.ruling}</strong>` : '';
-        const reasoning = verdict.reasoning ? ` — ${verdict.reasoning}` : '';
+        const reasoning = verdict.reasoning ? ` â€” ${verdict.reasoning}` : '';
         jb.innerHTML = `${ruling}${reasoning}`;
         judge.appendChild(jb);
         wrap.appendChild(judge);
@@ -1603,3 +1652,4 @@ ${analysisContext}`;
   document.documentElement.style.scrollBehavior = 'smooth';
 
 })();
+

@@ -129,19 +129,81 @@ function normalizeForRenderer(text, contextJSON = null) {
 // Helper extractors
 
 function extractRating(text) {
-
+  // Strategy 1: Try regex match for plain text "Rating: [value]" format
   const match = text.match(/Rating:\s*([^\n]+)/i);
+  if (match && match[1].trim()) {
+    const result = match[1].trim();
+    console.log('[BiasNeutralizer] extractRating: Success via regex ->', result);
+    return result;
+  }
 
-  return match ? match[1].trim() : 'Unclear';
+  // Strategy 2: Try JSON parsing fallback for structured responses
+  console.log('[BiasNeutralizer] extractRating: Regex failed, attempting JSON parsing...');
+  const parsedJson = safeJSON(text, null);
+  
+  if (parsedJson && typeof parsedJson === 'object') {
+    // Check common JSON paths in order of likelihood
+    const jsonPaths = [
+      parsedJson?.report?.findings?.overall_bias_assessment,
+      parsedJson?.findings?.overall_bias_assessment,
+      parsedJson?.rating
+    ];
 
+    for (const value of jsonPaths) {
+      if (value && typeof value === 'string' && value.trim()) {
+        const result = value.trim();
+        console.log('[BiasNeutralizer] extractRating: Success via JSON path ->', result);
+        return result;
+      }
+    }
+    console.log('[BiasNeutralizer] extractRating: JSON parsed but no rating found in expected paths');
+  } else {
+    console.log('[BiasNeutralizer] extractRating: JSON parsing failed or returned non-object');
+  }
+
+  // Strategy 3: Fallback to default
+  console.log('[BiasNeutralizer] extractRating: Falling back to default "Unclear"');
+  return 'Unclear';
 }
 
 function extractConfidence(text) {
-
+  // Strategy 1: Try regex match for plain text "Confidence: [value]" format
   const match = text.match(/Confidence:\s*([^\n]+)/i);
+  if (match && match[1].trim()) {
+    const result = match[1].trim();
+    console.log('[BiasNeutralizer] extractConfidence: Success via regex ->', result);
+    return result;
+  }
 
-  return match ? match[1].trim() : 'Medium';
+  // Strategy 2: Try JSON parsing fallback for structured responses
+  console.log('[BiasNeutralizer] extractConfidence: Regex failed, attempting JSON parsing...');
+  const parsedJson = safeJSON(text, null);
+  
+  if (parsedJson && typeof parsedJson === 'object') {
+    // Check common JSON paths in order of likelihood
+    const jsonPaths = [
+      parsedJson?.report?.findings?.confidence,
+      parsedJson?.report?.findings?.confidence_level,
+      parsedJson?.findings?.confidence,
+      parsedJson?.findings?.confidence_level,
+      parsedJson?.confidence
+    ];
 
+    for (const value of jsonPaths) {
+      if (value && typeof value === 'string' && value.trim()) {
+        const result = value.trim();
+        console.log('[BiasNeutralizer] extractConfidence: Success via JSON path ->', result);
+        return result;
+      }
+    }
+    console.log('[BiasNeutralizer] extractConfidence: JSON parsed but no confidence found in expected paths');
+  } else {
+    console.log('[BiasNeutralizer] extractConfidence: JSON parsing failed or returned non-object');
+  }
+
+  // Strategy 3: Fallback to default
+  console.log('[BiasNeutralizer] extractConfidence: Falling back to default "Medium"');
+  return 'Medium';
 }
 
 async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth, opts = {}) {
@@ -1602,7 +1664,7 @@ TEXT:
 
   );
 
-  const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
+  const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
 
   console.log('[BiasNeutralizer] ===== JUDGE RESPONSE =====');
 
@@ -1616,7 +1678,16 @@ TEXT:
 
   console.log('[BiasNeutralizer] Adversarial Tribunal Analysis complete');
 
-  // Normalize and extract at source
+  // CRITICAL: Extract rating and confidence from RAW Judge response BEFORE normalization
+  // This prevents normalizeForRenderer's strict validation from replacing valid values with defaults
+
+  const correctRating = extractRating(judgeResponse);
+
+  const correctConfidence = extractConfidence(judgeResponse);
+
+  console.log('[BiasNeutralizer] Extracted from raw Judge response:', { correctRating, correctConfidence });
+
+  // NOW normalize the text for display (after extraction)
 
   const normalizedText = normalizeForRenderer(judgeResponse, contextJson);
 
@@ -1644,11 +1715,11 @@ TEXT:
 
     },
 
-    // NEW: Embed extracted for quick render
+    // Use values extracted from RAW response (before normalization altered them)
 
-    extractedRating: extractRating(normalizedText),
+    extractedRating: correctRating,
 
-    extractedConfidence: extractConfidence(normalizedText)
+    extractedConfidence: correctConfidence
 
   };
 

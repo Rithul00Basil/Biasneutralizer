@@ -263,25 +263,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     MESSAGE_INTERVAL_MS: 2500,
     MIN_ARTICLE_LENGTH: 100,
     MAX_PARAGRAPHS_TO_ANALYZE: 10,
-    
-    PHASE_1_MESSAGES: [
-      "Preparing your article for analysis...",
-      "Scanning language tone and sentiment...",
-      "Detecting possible bias patterns...",
-      "Spotting emotionally charged phrases...",
-      "Checking rhetorical devices in use...",
-    ],
-    
-    PHASE_2_MESSAGES: [
-      "Highlighting logical fallacies...",
-      "Comparing source credibility metrics...",
-      "Analyzing balance of perspectives...",
-      "Evaluating neutrality of wording...",
-      "Looking for cherry-picked examples...",
-      "Measuring evidence vs opinion ratio...",
-      "Cross-referencing fact consistency...",
-    ],
   };
+
+  const SCAN_MESSAGES = [
+    "Analyzing article structure & context...",
+    "Scanning narrative for loaded language...",
+    "Identifying potential bias indicators...",
+    "Checking for journalistic balance...",
+    "Building case: Examining evidence...",
+    "Cross-examining: Challenging findings...",
+    "Synthesizing results: Judge rendering verdict...",
+    "Finalizing comprehensive bias report..."
+  ];
 
   // ========================================
   // DOM ELEMENTS
@@ -576,17 +569,10 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function startStatusUpdates() {
     let messageIndex = 0;
-    const phase1Limit = CONSTANTS.PHASE_1_MESSAGES.length;
-    
+    const messages = SCAN_MESSAGES.length ? SCAN_MESSAGES : ["Analyzing article..."];
+
     function updateMessage() {
-      let currentMessage;
-      
-      if (messageIndex < phase1Limit) {
-        currentMessage = CONSTANTS.PHASE_1_MESSAGES[messageIndex];
-      } else {
-        const phase2Index = (messageIndex - phase1Limit) % CONSTANTS.PHASE_2_MESSAGES.length;
-        currentMessage = CONSTANTS.PHASE_2_MESSAGES[phase2Index];
-      }
+      const currentMessage = messages[messageIndex % messages.length];
       
       elements.statusText.classList.add('exiting');
       
@@ -1161,10 +1147,19 @@ ${fullText}`;
     }
   } catch (error) {
     console.error('[BiasNeutralizer] Scan initiation failed:', error);
-    showError(
-      `Failed to start scan: ${error.message}`,
-      'Please try again or reload the page and the extension.'
-    );
+    const errorMessage = (error && typeof error.message === 'string') ? error.message : '';
+    if (errorMessage.includes('Receiving end does not exist')) {
+      showError(
+        'Failed to connect to the page.',
+        'Please REFRESH the web page you want to analyze and try again.'
+      );
+    } else {
+      const detail = errorMessage || 'Unknown error';
+      showError(
+        `Failed to start scan: ${detail}`,
+        'Please try again or reload the page and the extension.'
+      );
+    }
     // This is the important fix: reset state on failure
     state.isScanning = false;
     if (elements.scanButton) elements.scanButton.disabled = false;

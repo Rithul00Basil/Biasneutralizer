@@ -109,6 +109,19 @@ flowchart TD
     B -->|Optional neutral rewrite| G[On-Device Rewriter Gemini Nano]
 ```
 
+### Setup & Mode Selection Flow
+
+```mermaid
+flowchart TD
+    S[Setup Page] --> F[Enable required flags + restart]
+    F --> C{LanguageModel.availability()}
+    C -->|ready| OD[On‑Device mode active]
+    C -->|after-download| DL[Download on‑device model] --> OD
+    C -->|not-supported / requirements-not-met| CL[Cloud mode only]
+    OD --> UI[Side Panel / Results]
+    CL --> UI
+```
+
 ### Hybrid workflow in three stages
 1. **Local extraction and heuristics (tab):** `content/content.js` isolates article narrative, de-duplicates markup, and keeps the payload under 500K characters before any cloud call.
 2. **Cloud tribunal (service worker):** `background/background.js` batches prompts from `shared/prompts.js`, runs the Gemini agents in parallel, then stages a prosecutor/defense/judge debate to reach a defensible verdict.
