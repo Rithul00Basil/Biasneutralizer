@@ -131,8 +131,11 @@ function normalizeForRenderer(text, contextJSON = null) {
 function extractRating(text) {
   // Strategy 1: Prefer markdown header format emitted by Judge agent
   const ratingHeaderPatterns = [
-    /Overall Bias Assessment:\s*\*\*(.*?)\*\*/i, // e.g., "Overall Bias Assessment: **Center**"
-    /\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/i // e.g., "### Findings - **Overall Bias Assessment:** Center"
+    // PRIMARY: Match markdown list format "- **Overall Bias Assessment:** Center"
+    /^[\s\-\*]*\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/im,
+    // FALLBACK: Legacy patterns for backwards compatibility
+    /Overall Bias Assessment:\s*\*\*(.*?)\*\*/i,
+    /\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/i
   ];
 
   for (const pattern of ratingHeaderPatterns) {
@@ -184,8 +187,11 @@ function extractRating(text) {
 function extractConfidence(text) {
   // Strategy 1: Prefer markdown header format emitted by Judge agent
   const confidenceHeaderPatterns = [
-    /Confidence:\s*\*\*(.*?)\*\*/i, // e.g., "Confidence: **High**"
-    /\*\*Confidence:\*\*\s*([^\n]+)/i // e.g., "### Findings - **Confidence:** High"
+    // PRIMARY: Match markdown list format "- **Confidence:** High"
+    /^[\s\-\*]*\*\*Confidence:\*\*\s*([^\n]+)/im,
+    // FALLBACK: Legacy patterns for backwards compatibility
+    /Confidence:\s*\*\*(.*?)\*\*/i,
+    /\*\*Confidence:\*\*\s*([^\n]+)/i
   ];
 
   for (const pattern of confidenceHeaderPatterns) {
