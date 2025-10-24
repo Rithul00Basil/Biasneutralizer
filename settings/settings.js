@@ -57,8 +57,7 @@
     savedApiKey: '',
     apiConnectionStatus: 'disconnected',
     apiConnectionMessage: 'Not connected',
-    analysisDepth: 'quick',
-    assistantModel: 'on-device'
+    analysisDepth: 'quick'
   };
 
   const elements = {};
@@ -92,7 +91,6 @@
     elements.apiFeedback = document.getElementById('api-feedback');
     elements.analysisRadios = document.querySelectorAll('input[name="analysis-depth"]');
     elements.applyButton = document.getElementById('apply-changes');
-    elements.assistantModelRadios = document.querySelectorAll('input[name="assistant-model"]');
     elements.advancedFeedback = document.getElementById('advanced-feedback');
     elements.backButton = document.getElementById('back-button');
   }
@@ -133,10 +131,6 @@
 
     elements.analysisRadios.forEach((radio) => {
       radio.addEventListener('change', handleAnalysisSelection);
-    });
-
-    elements.assistantModelRadios.forEach((radio) => {
-      radio.addEventListener('change', handleAssistantModelSelection);
     });
 
     if (elements.applyButton) {
@@ -183,8 +177,7 @@
         'geminiApiKey',
         'apiConnectionStatus',
         'apiConnectionMessage',
-        'analysisDepth',
-        'assistantModel'
+        'analysisDepth'
       ]);
 
       const storedApiKey = typeof stored.geminiApiKey === 'string' ? stored.geminiApiKey : '';
@@ -195,12 +188,9 @@
         elements.apiKeyInput.value = '';
         elements.apiKeyInput.placeholder = storedApiKey ? '•••••••••••••••••••• (saved)' : 'Paste your Gemini API key';
       }
-      
+
       state.analysisDepth = stored.analysisDepth || state.analysisDepth;
       syncRadioGroup(elements.analysisRadios, state.analysisDepth);
-
-      state.assistantModel = stored.assistantModel || state.assistantModel;
-      syncRadioGroup(elements.assistantModelRadios, state.assistantModel);
 
       const hasStoredStatus = storedApiKey && stored.apiConnectionStatus;
       if (hasStoredStatus) {
@@ -276,11 +266,10 @@
   const saveApiKeyDebounced = debounce(async () => {
     if (!elements.apiKeyInput) return;
     const newKey = (elements.apiKeyInput.value.trim() && elements.apiKeyInput.value.indexOf('•') === -1) ? elements.apiKeyInput.value.trim() : state.savedApiKey;
-    const payload = { settings: { geminiApiKey: newKey, analysisDepth: state.analysisDepth || 'quick', assistantModel: state.assistantModel || 'on-device' } };
+    const payload = { settings: { geminiApiKey: newKey, analysisDepth: state.analysisDepth || 'quick' } };
     payload.geminiApiKey = newKey;
     state.savedApiKey = newKey;
     payload.analysisDepth = state.analysisDepth || 'quick';
-    payload.assistantModel = state.assistantModel || 'on-device';
     await storageSet(payload);
   }, 400);
 
@@ -416,7 +405,7 @@
       showFeedback(elements.apiFeedback, 'API key saved.', 'success');
     }
 
-    const settingsPayload = { geminiApiKey: apiKey, analysisDepth: state.analysisDepth || 'quick', assistantModel: state.assistantModel || 'on-device' };
+    const settingsPayload = { geminiApiKey: apiKey, analysisDepth: state.analysisDepth || 'quick' };
     const ok = await storageSet({
       settings: settingsPayload,
       geminiApiKey: apiKey,
@@ -439,27 +428,15 @@
     state.analysisDepth = event.target.value;
   }
 
-  function handleAssistantModelSelection(event) {
-    state.assistantModel = event.target.value;
-    showFeedback(elements.advancedFeedback, '');
-  }
-
   async function handleApplyChanges(event) {
     const button = event.currentTarget;
     flashButton(button);
     const finish = setButtonWorking(button, 'Applying...');
 
     try {
-      // Sync aiPreference with assistantModel for setup flow compatibility
-      const aiPreference = state.assistantModel === 'on-device' ? 'on-device' : 'cloud';
-      const privateMode = state.assistantModel === 'on-device';
-      
-      const settingsPayload = { 
-        analysisDepth: state.analysisDepth, 
-        assistantModel: state.assistantModel, 
-        aiPreference: aiPreference,
-        privateMode: privateMode,
-        geminiApiKey: state.savedApiKey || '' 
+      const settingsPayload = {
+        analysisDepth: state.analysisDepth,
+        geminiApiKey: state.savedApiKey || ''
       };
       const ok = await storageSet({ settings: settingsPayload, ...settingsPayload });
       if (!ok) throw new Error('storageSet failed');

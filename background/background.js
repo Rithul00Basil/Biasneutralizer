@@ -129,136 +129,280 @@ function normalizeForRenderer(text, contextJSON = null) {
 // Helper extractors
 
 function extractRating(text) {
-  // Strategy 1: Prefer markdown header format emitted by Judge agent
+  console.log('[BiasNeutralizer] extractRating: Starting extraction from text length:', text?.length || 0);
+  
+  if (!text || typeof text !== 'string') {
+    console.log('[BiasNeutralizer] extractRating: Invalid input, falling back to default');
+    return 'Unclear';
+  }
+
+  // Strategy 1: Try multiple markdown patterns WITHOUT line-start anchors
   const ratingHeaderPatterns = [
-    // PRIMARY: Match markdown list format "- **Overall Bias Assessment:** Center"
-    /^[\s\-\*]*\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/im,
-    // FALLBACK: Legacy patterns for backwards compatibility
-    /Overall Bias Assessment:\s*\*\*(.*?)\*\*/i,
-    /\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/i
+    // Pattern 1: Bullet point with bold markdown (most likely from Judge)
+    /[-*]\s*\*\*Overall Bias Assessment:\*\*\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 2: Just the bold header anywhere in text
+    /\*\*Overall Bias Assessment:\*\*\s*:?\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 3: Without bold markers
+    /Overall Bias Assessment:\s*:?\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 4: With colon variations
+    /Overall\s+Bias\s+Assessment\s*[:：]\s*\[?([^\]\n]+)\]?/i
   ];
 
   for (const pattern of ratingHeaderPatterns) {
     const markdownMatch = text.match(pattern);
-    if (markdownMatch && markdownMatch[1] && markdownMatch[1].trim()) {
-      const result = markdownMatch[1].trim();
-      console.log('[BiasNeutralizer] extractRating: Success via markdown header ->', result);
+    if (markdownMatch && markdownMatch[1]) {
+      let result = markdownMatch[1]
+        .trim()
+        .replace(/[\[\]]/g, '') // Remove any brackets
+        .replace(/^["']|["']$/g, '') // Remove quotes
+        .replace(/\.$/, ''); // Remove trailing period
+      
+      // Normalize common variations
+      const normalizations = {
+        'centre': 'Center',
+        'left': 'Lean Left',
+        'right': 'Lean Right',
+        'strong left': 'Strong Left',
+        'strong right': 'Strong Right',
+        'unknown': 'Unclear',
+        'n/a': 'Unclear',
+        'none': 'Unclear'
+      };
+      
+      const normalized = normalizations[result.toLowerCase()] || result;
+      
+      // Validate it's an allowed rating
+      const allowedRatings = ['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear'];
+      if (allowedRatings.some(r => r.toLowerCase() === normalized.toLowerCase())) {
+        // Return with correct casing
+        const finalResult = allowedRatings.find(r => r.toLowerCase() === normalized.toLowerCase()) || normalized;
+        console.log('[BiasNeutralizer] extractRating: Success via markdown pattern ->', finalResult);
+        return finalResult;
+      }
+      
+      console.log('[BiasNeutralizer] extractRating: Found value but not in allowed list:', result);
+    }
+  }
+
+  // Strategy 2: Try simple "Rating:" patterns (legacy format)
+  const simplePatterns = [
+    /Rating:\s*\[?([^\]\n]+)\]?/i,
+    /\[RATING\]\s*:\s*\[?([^\]\n]+)\]?/i,
+    /Final Rating:\s*\[?([^\]\n]+)\]?/i
+  ];
+
+  for (const pattern of simplePatterns) {
+    const simpleMatch = text.match(pattern);
+    if (simpleMatch && simpleMatch[1]) {
+      const result = simpleMatch[1]
+        .trim()
+        .replace(/[\[\]]/g, '')
+        .replace(/^["']|["']$/g, '');
+      console.log('[BiasNeutralizer] extractRating: Success via simple pattern ->', result);
       return result;
     }
   }
 
-  // Strategy 2: Try regex match for plain text "Rating: [value]" format (legacy)
-  const simpleMatch = text.match(/Rating:\s*([^\n]+)/i);
-  if (simpleMatch && simpleMatch[1].trim()) {
-    const result = simpleMatch[1].trim();
-    console.log('[BiasNeutralizer] extractRating: Success via simple regex ->', result);
-    return result;
-  }
-
-  // Strategy 3: Try JSON parsing fallback for structured responses
-  console.log('[BiasNeutralizer] extractRating: Markdown and regex failed, attempting JSON parsing...');
+  // Strategy 3: Try JSON parsing
+  console.log('[BiasNeutralizer] extractRating: Trying JSON parsing...');
   const parsedJson = safeJSON(text, null);
-
+  
   if (parsedJson && typeof parsedJson === 'object') {
-    // Check common JSON paths in order of likelihood
+    // Check various possible JSON paths
     const jsonPaths = [
-      parsedJson?.report?.findings?.overall_bias_assessment,
       parsedJson?.findings?.overall_bias_assessment,
-      parsedJson?.rating
+      parsedJson?.report?.findings?.overall_bias_assessment,
+      parsedJson?.verdict?.overall_bias_assessment,
+      parsedJson?.overall_bias_assessment,
+      parsedJson?.bias_assessment,
+      parsedJson?.rating,
+      parsedJson?.final_rating
     ];
 
     for (const value of jsonPaths) {
-      if (value && typeof value === 'string' && value.trim()) {
+      if (value && typeof value === 'string') {
         const result = value.trim();
         console.log('[BiasNeutralizer] extractRating: Success via JSON path ->', result);
         return result;
       }
     }
     console.log('[BiasNeutralizer] extractRating: JSON parsed but no rating found in expected paths');
-  } else {
-    console.log('[BiasNeutralizer] extractRating: JSON parsing failed or returned non-object');
   }
 
-  // Strategy 4: Fallback to default
-  console.log('[BiasNeutralizer] extractRating: Falling back to default "Unclear"');
+  // Strategy 4: Last resort - scan for rating keywords in context
+  const contextPatterns = [
+    /(?:rating|assessment|verdict).*?(?:is|:|=)\s*["']?([^"'\n]+?)["']?(?:\.|,|\n|$)/i
+  ];
+
+  for (const pattern of contextPatterns) {
+    const contextMatch = text.match(pattern);
+    if (contextMatch && contextMatch[1]) {
+      const potentialRating = contextMatch[1].trim();
+      const allowedRatings = ['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear'];
+      if (allowedRatings.some(r => potentialRating.toLowerCase().includes(r.toLowerCase()))) {
+        const result = allowedRatings.find(r => potentialRating.toLowerCase().includes(r.toLowerCase()));
+        console.log('[BiasNeutralizer] extractRating: Success via context scan ->', result);
+        return result;
+      }
+    }
+  }
+
+  // Fallback
+  console.log('[BiasNeutralizer] extractRating: All strategies failed, falling back to default "Unclear"');
   return 'Unclear';
 }
 
 function extractConfidence(text) {
-  // Strategy 1: Prefer markdown header format emitted by Judge agent
+  console.log('[BiasNeutralizer] extractConfidence: Starting extraction from text length:', text?.length || 0);
+  
+  if (!text || typeof text !== 'string') {
+    console.log('[BiasNeutralizer] extractConfidence: Invalid input, falling back to default');
+    return 'Medium';
+  }
+
+  // Strategy 1: Try multiple markdown patterns WITHOUT line-start anchors
   const confidenceHeaderPatterns = [
-    // PRIMARY: Match markdown list format "- **Confidence:** High"
-    /^[\s\-\*]*\*\*Confidence:\*\*\s*([^\n]+)/im,
-    // FALLBACK: Legacy patterns for backwards compatibility
-    /Confidence:\s*\*\*(.*?)\*\*/i,
-    /\*\*Confidence:\*\*\s*([^\n]+)/i
+    // Pattern 1: Bullet point with bold markdown (most likely from Judge)
+    /[-*]\s*\*\*Confidence:\*\*\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 2: Just the bold header anywhere in text
+    /\*\*Confidence:\*\*\s*:?\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 3: Without bold markers
+    /Confidence:\s*:?\s*\[?([^\]\n]+)\]?/i,
+    // Pattern 4: With variations
+    /Confidence\s+Level\s*[:：]\s*\[?([^\]\n]+)\]?/i,
+    /Confidence\s*[:：]\s*\[?([^\]\n]+)\]?/i
   ];
 
   for (const pattern of confidenceHeaderPatterns) {
     const markdownMatch = text.match(pattern);
-    if (markdownMatch && markdownMatch[1] && markdownMatch[1].trim()) {
-      const result = markdownMatch[1].trim();
-      console.log('[BiasNeutralizer] extractConfidence: Success via markdown header ->', result);
+    if (markdownMatch && markdownMatch[1]) {
+      let result = markdownMatch[1]
+        .trim()
+        .replace(/[\[\]]/g, '') // Remove any brackets
+        .replace(/^["']|["']$/g, '') // Remove quotes
+        .replace(/\.$/, ''); // Remove trailing period
+      
+      // Normalize common variations
+      const normalizations = {
+        'very high': 'High',
+        'very low': 'Low',
+        'moderate': 'Medium',
+        'mid': 'Medium',
+        'unclear': 'Medium',
+        'unknown': 'Medium'
+      };
+      
+      const normalized = normalizations[result.toLowerCase()] || result;
+      
+      // Validate it's an allowed confidence level
+      const allowedLevels = ['High', 'Medium', 'Low'];
+      if (allowedLevels.some(l => l.toLowerCase() === normalized.toLowerCase())) {
+        // Return with correct casing
+        const finalResult = allowedLevels.find(l => l.toLowerCase() === normalized.toLowerCase()) || normalized;
+        console.log('[BiasNeutralizer] extractConfidence: Success via markdown pattern ->', finalResult);
+        return finalResult;
+      }
+      
+      console.log('[BiasNeutralizer] extractConfidence: Found value but not in allowed list:', result);
+    }
+  }
+
+  // Strategy 2: Try simple "Confidence:" patterns (legacy format)
+  const simplePatterns = [
+    /Confidence:\s*\[?([^\]\n]+)\]?/i,
+    /\[CONFIDENCE\]\s*:\s*\[?([^\]\n]+)\]?/i,
+    /Confidence Level:\s*\[?([^\]\n]+)\]?/i
+  ];
+
+  for (const pattern of simplePatterns) {
+    const simpleMatch = text.match(pattern);
+    if (simpleMatch && simpleMatch[1]) {
+      const result = simpleMatch[1]
+        .trim()
+        .replace(/[\[\]]/g, '')
+        .replace(/^["']|["']$/g, '');
+      console.log('[BiasNeutralizer] extractConfidence: Success via simple pattern ->', result);
       return result;
     }
   }
 
-  // Strategy 2: Try regex match for plain text "Confidence: [value]" format (legacy)
-  const simpleMatch = text.match(/Confidence:\s*([^\n]+)/i);
-  if (simpleMatch && simpleMatch[1].trim()) {
-    const result = simpleMatch[1].trim();
-    console.log('[BiasNeutralizer] extractConfidence: Success via simple regex ->', result);
-    return result;
-  }
-
-  // Strategy 3: Try JSON parsing fallback for structured responses
-  console.log('[BiasNeutralizer] extractConfidence: Regex failed, attempting JSON parsing...');
+  // Strategy 3: Try JSON parsing
+  console.log('[BiasNeutralizer] extractConfidence: Trying JSON parsing...');
   const parsedJson = safeJSON(text, null);
-
+  
   if (parsedJson && typeof parsedJson === 'object') {
-    // Check common JSON paths in order of likelihood
+    // Check various possible JSON paths
     const jsonPaths = [
-      parsedJson?.report?.findings?.confidence,
-      parsedJson?.report?.findings?.confidence_level,
       parsedJson?.findings?.confidence,
-      parsedJson?.findings?.confidence_level,
-      parsedJson?.confidence
+      parsedJson?.report?.findings?.confidence,
+      parsedJson?.verdict?.confidence,
+      parsedJson?.confidence,
+      parsedJson?.confidence_level,
+      parsedJson?.report?.confidence,
+      parsedJson?.findings?.confidence_level
     ];
 
     for (const value of jsonPaths) {
-      if (value && typeof value === 'string' && value.trim()) {
+      if (value && typeof value === 'string') {
         const result = value.trim();
         console.log('[BiasNeutralizer] extractConfidence: Success via JSON path ->', result);
         return result;
       }
     }
     console.log('[BiasNeutralizer] extractConfidence: JSON parsed but no confidence found in expected paths');
-  } else {
-    console.log('[BiasNeutralizer] extractConfidence: JSON parsing failed or returned non-object');
   }
 
-  // Strategy 4: Fallback to default
-  console.log('[BiasNeutralizer] extractConfidence: Falling back to default "Medium"');
+  // Strategy 4: Last resort - scan for confidence keywords in context
+  const contextPatterns = [
+    /(?:confidence|certainty).*?(?:is|:|=)\s*["']?([^"'\n]+?)["']?(?:\.|,|\n|$)/i
+  ];
+
+  for (const pattern of contextPatterns) {
+    const contextMatch = text.match(pattern);
+    if (contextMatch && contextMatch[1]) {
+      const potentialConfidence = contextMatch[1].trim();
+      const allowedLevels = ['High', 'Medium', 'Low'];
+      if (allowedLevels.some(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()))) {
+        const result = allowedLevels.find(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()));
+        console.log('[BiasNeutralizer] extractConfidence: Success via context scan ->', result);
+        return result;
+      }
+    }
+  }
+
+  // Fallback
+  console.log('[BiasNeutralizer] extractConfidence: All strategies failed, falling back to default "Medium"');
   return 'Medium';
 }
 
 async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth, opts = {}) {
 
-  const { normalize = true, retries = 3 } = opts;
+  const { normalize = true, retries = 3, agentRole = 'default' } = opts;
 
   const isDeep = analysisDepth === 'deep';
 
-  // Deep: gemini-2.5-pro; Fast: gemini-flash-latest
+  const isJudge = agentRole === 'judge';
 
-  const primary = isDeep ? 'gemini-2.5-pro' : 'gemini-flash-latest';
+  // Deep mode: gemini-2.5-pro → gemini-flash-latest (with max thinking)
+  // Quick mode: gemini-flash-lite-latest (except Judge uses gemini-2.5-flash with 2048 thinking)
 
-  const fallbacks = isDeep
+  let primary, fallbacks, models;
 
-    ? ['gemini-2.5-pro-exp-0827', 'gemini-2.0-pro-exp']
+  if (isDeep) {
+    primary = 'gemini-2.5-pro';
+    fallbacks = ['gemini-flash-latest'];
+  } else {
+    // Quick mode
+    if (isJudge) {
+      primary = 'gemini-2.5-flash';
+      fallbacks = []; // No fallback for Judge in quick mode
+    } else {
+      primary = 'gemini-flash-lite-latest';
+      fallbacks = []; // No fallback for regular agents in quick mode
+    }
+  }
 
-    : ['gemini-2.5-flash', 'gemini-2.0-flash-lite'];
-
-  const models = [primary, ...fallbacks];
+  models = [primary, ...fallbacks];
 
   let lastErr;
 
@@ -289,18 +433,32 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
       };
 
       // Add thinkingConfig for supported models
+      // Deep mode fallback: use max thinking (-1) for gemini-flash-latest
+      // Quick mode Judge: use 2048 thinking for gemini-2.5-flash
 
-      if (typeof thinkingBudget === "number") {
+      let effectiveThinkingBudget = thinkingBudget;
 
-        if (model.includes("2.5-flash") || model.includes("2.0-flash")) {
+      // Override thinking budget for Deep mode fallback to gemini-flash-latest
+      if (isDeep && model === 'gemini-flash-latest') {
+        effectiveThinkingBudget = -1; // Max thinking budget for fallback
+      }
 
-          body.generationConfig.thinkingConfig = { thinkingBudget };
+      // Override thinking budget for Quick mode Judge
+      if (!isDeep && isJudge && model === 'gemini-2.5-flash') {
+        effectiveThinkingBudget = 2048; // Specific thinking budget for Judge
+      }
+
+      if (typeof effectiveThinkingBudget === "number") {
+
+        if (model.includes("flash") || model.includes("2.0-flash")) {
+
+          body.generationConfig.thinkingConfig = { thinkingBudget: effectiveThinkingBudget };
 
         } else if (model.includes("2.5-pro") || model.includes("2.0-pro")) {
 
-          if (thinkingBudget === -1 || thinkingBudget >= 128) {
+          if (effectiveThinkingBudget === -1 || effectiveThinkingBudget >= 128) {
 
-            body.generationConfig.thinkingConfig = { thinkingBudget };
+            body.generationConfig.thinkingConfig = { thinkingBudget: effectiveThinkingBudget };
 
           }
 
@@ -1093,7 +1251,7 @@ ARTICLE TEXT:
 
   const contextPrompt = AgentPrompts.createContextPrompt(textToAnalyze);
 
-  const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+  const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'context' });
 
   console.log('[BiasNeutralizer] Context analysis complete');
 
@@ -1549,13 +1707,13 @@ TEXT:
 
   const [quoteResponse, languageResponse, hunterResponse, skepticResponse] = await Promise.all([
 
-    callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'quote' }),
 
-    callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'language' }),
 
-    callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'hunter' }),
 
-    callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+    callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'skeptic' })
 
   ]);
 
@@ -1570,7 +1728,7 @@ TEXT:
       textToAnalyze,
       async (element) => {
         const snippetPrompt = AgentPrompts.createBalancedSnippetPrompt(contextData, textToAnalyze, element);
-        const snippetResponse = await callGemini(apiKey, snippetPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+        const snippetResponse = await callGemini(apiKey, snippetPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'snippet' });
         const snippetJSON = safeJSON(snippetResponse, { example: null });
         return typeof snippetJSON.example === 'string' ? snippetJSON.example.trim() : '';
       }
@@ -1594,11 +1752,11 @@ TEXT:
 
     [sourceDiversityResponse, framingResponse, omissionResponse] = await Promise.all([
 
-      callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+      callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'sourceDiversity' }),
 
-      callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+      callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'framing' }),
 
-      callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+      callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'omission' })
 
     ]);
 
@@ -1630,7 +1788,7 @@ TEXT:
 
   );
 
-  const prosecutorResponse = await callGemini(apiKey, prosecutorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+  const prosecutorResponse = await callGemini(apiKey, prosecutorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'prosecutor' });
 
   const prosecutorJSON = safeJSON(prosecutorResponse, { charges: [], prosecution_summary: 'No charges filed.', confidence: 'High' });
 
@@ -1666,9 +1824,9 @@ TEXT:
 
   const [defenseResponse, investigatorResponse] = await Promise.all([
 
-    callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false }),
+    callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'defense' }),
 
-    callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false })
+    callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'investigator' })
 
   ]);
 
@@ -1700,7 +1858,7 @@ TEXT:
 
   );
 
-  const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: false });
+  const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'judge' });
 
   console.log('[BiasNeutralizer] ===== JUDGE RESPONSE =====');
 
@@ -1716,6 +1874,7 @@ TEXT:
 
   // CRITICAL: Extract rating and confidence from RAW Judge response BEFORE normalization
   // This prevents normalizeForRenderer's strict validation from replacing valid values with defaults
+  console.log("BG_DEBUG: Raw judgeResponse BEFORE extraction:", judgeResponse);
 
   const correctRating = extractRating(judgeResponse);
 
@@ -1943,6 +2102,12 @@ function getStorageData(keys) {
 
   });
 
+}
+
+
+// Export for testing or module usage
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { extractRating, extractConfidence };
 }
 
 

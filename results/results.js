@@ -1479,21 +1479,15 @@
   }
 
   async function streamAssistantResponse(userInput, messageElement) {
-    const settings = await storageGet(['lastAnalysis', 'geminiApiKey', 'assistantModel']);
+    const settings = await storageGet(['lastAnalysis', 'geminiApiKey']);
     const { lastAnalysis, geminiApiKey } = settings;
-    const assistantModel = settings.assistantModel || 'on-device';
 
-    if (assistantModel === 'cloud' && !geminiApiKey) {
+    if (!geminiApiKey) {
       messageElement.textContent = "Error: Gemini API key not found in settings.";
       return;
     }
 
     const analysisContext = JSON.stringify(lastAnalysis, null, 2);
-
-    if (assistantModel === 'on-device') {
-      await handleOnDeviceAssistant(userInput, messageElement);
-      return;
-    }
 
     const systemPrompt = `You are a knowledgeable AI assistant with expertise in news bias analysis, media literacy, journalism, and general topics.
 
@@ -1508,8 +1502,8 @@ Format your responses using markdown (bold, italics, lists, headers, code blocks
 ANALYSIS CONTEXT (for reference when discussing this article):
 ${analysisContext}`;
 
-    // Use very fast model for results assistant cloud mode
-    const model = 'gemini-flash-latest';
+    // Hardcoded to use cloud model: gemini-flash-lite-latest
+    const model = 'gemini-flash-lite-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}&alt=sse`;
 
     const requestBody = {
