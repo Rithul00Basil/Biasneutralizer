@@ -1,11 +1,16 @@
-﻿/**
+/**
  * BiasNeutralizer Side Panel Controller
  * Manages article scanning, AI analysis, and user interactions
  */
 import { AgentPrompts } from '../shared/prompts.js';
+
+const SP_LOG_PREFIX = '[Sidepanel]';
+const spLog = (...args) => console.log(SP_LOG_PREFIX, ...args);
+const spWarn = (...args) => console.warn(SP_LOG_PREFIX, ...args);
+const spError = (...args) => console.error(SP_LOG_PREFIX, ...args);
 document.addEventListener('DOMContentLoaded', async () => {
   // === STEP 1: CHECK SETUP COMPLETION (FIRST-TIME SETUP FLOW) ===
-  console.log('[BiasNeutralizer] Checking setup completion...');
+  spLog('Checking setup completion...');
   
   try {
     const storage = await new Promise((resolve) => {
@@ -16,14 +21,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // If setup not completed, redirect to setup page
     if (!storage.hasCompletedSetup) {
-      console.log('[BiasNeutralizer] Setup not completed, redirecting to setup page');
+      spLog('Setup not completed, redirecting to setup page');
       window.location.href = chrome.runtime.getURL('setup/setup.html');
       return; // Stop execution
     }
 
-    console.log('[BiasNeutralizer] Setup completed, continuing with normal flow');
+    spLog('Setup completed, continuing with normal flow');
   } catch (error) {
-    console.error('[BiasNeutralizer] Error checking setup status:', error);
+    spError('Error checking setup status:', error);
     // On error, continue with normal flow (fail-safe)
   }
 
@@ -112,14 +117,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             example = candidate.trim();
           }
         } catch (error) {
-          console.warn('[BiasNeutralizer] Failed to fetch balanced snippet (on-device):', error);
+          spWarn('Failed to fetch balanced snippet (on-device):', error);
         }
       }
 
       if (isValidBalancedExcerpt(example)) {
         resolved.push({ ...element, example });
       } else {
-        console.warn('[BiasNeutralizer] Dropping balanced element without valid excerpt (on-device):', element);
+        spWarn('Dropping balanced element without valid excerpt (on-device):', element);
       }
     }
 
@@ -130,7 +135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const t = String(contextJSON?.type || '').toLowerCase();
     const isOpinionAnalysis = !!contextJSON?.is_opinion_or_analysis || t === 'opinion' || t === 'analysis';
 
-    console.log('[BiasNeutralizer] Rating Calculation:', {
+    spLog('Rating calculation inputs:', {
       contextType: t,
       isOpinionAnalysis: isOpinionAnalysis,
       will_return_unclear: isOpinionAnalysis,
@@ -140,7 +145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Handle Opinion/Analysis Content
     if (isOpinionAnalysis) {
-      console.log('[BiasNeutralizer] ⚠️ Content classified as Opinion/Analysis - returning Unclear');
+      spLog('Content classified as opinion/analysis; returning "Unclear" rating');
       return [
         '### Findings',
         '- **Overall Bias Assessment:** Unclear',
@@ -297,7 +302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Validate all required elements exist (except optional animation container)
   for (const [key, element] of Object.entries(elements)) {
     if (!element && key !== 'animationContainer') {
-      console.error(`[BiasNeutralizer] Critical UI element missing: "${key}"`);
+      spError(`Critical UI element missing: "${key}"`);
       showFatalError(`Failed to initialize: Missing element "${key}"`);
       return;
     }
@@ -305,7 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Log warning for optional elements
   if (!elements.animationContainer) {
-    console.warn('[BiasNeutralizer] Optional element missing: animationContainer');
+    spWarn('Animation container element missing; continuing without optional animation');
   }
 
   // ========================================
@@ -330,13 +335,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   function showNotification(message, type = 'error') {
     const toast = document.querySelector('#notification-toast');
     if (!toast) {
-      console.error('[BiasNeutralizer] Notification toast element not found');
+      spError('Notification toast element not found');
       return;
     }
 
     const messageSpan = toast.querySelector('span');
     if (!messageSpan) {
-      console.error('[BiasNeutralizer] Notification toast span not found');
+      spError('Notification toast span not found');
       return;
     }
 
@@ -356,7 +361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function validateChromeAPI() {
     if (typeof chrome === 'undefined' || !chrome.runtime) {
-      console.error('[BiasNeutralizer] Chrome extension APIs not available');
+      spError('Chrome extension APIs not available');
       return false;
     }
     return true;
@@ -383,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         showGPUWarning();
       }
     } catch (error) {
-      console.warn('[BiasNeutralizer] GPU check failed:', error);
+      spWarn('GPU check failed:', error);
     }
   }
 
@@ -403,11 +408,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'bn-modal-close';
     closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.textContent = '×';
+    closeBtn.textContent = '�';
     
     const icon = document.createElement('div');
     icon.className = 'bn-modal-icon';
-    icon.textContent = '⚠️';
+    icon.textContent = '??';
     
     const title = document.createElement('h3');
     title.id = 'gpu-modal-title';
@@ -483,6 +488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Shows a fatal error message to the user
    */
   function showFatalError(message) {
+    spError('Fatal error displayed to user', message);
     if (elements.detectionHelper) {
       elements.detectionHelper.textContent = `Error: ${message}`;
       elements.detectionHelper.style.color = '#ef4444';
@@ -494,7 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Shows user-friendly error with optional recovery suggestion
    */
   function showError(message, recovery = null) {
-    console.error(`[BiasNeutralizer] ${message}`);
+    spError('User notification issued', { message, recovery });
     const fullMessage = recovery ? `${message}\n\n${recovery}` : message;
     showNotification(fullMessage, 'error');
   }
@@ -509,14 +515,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         chrome.storage.local.set(data, () => {
           if (chrome.runtime.lastError) {
-            console.error('[BiasNeutralizer] Storage error:', chrome.runtime.lastError);
+            spError('Storage error:', chrome.runtime.lastError);
             resolve(false);
           } else {
             resolve(true);
           }
         });
       } catch (error) {
-        console.error('[BiasNeutralizer] Storage exception:', error);
+        spError('Storage exception:', error);
         resolve(false);
       }
     });
@@ -532,14 +538,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         chrome.storage.local.get(keys, (result) => {
           if (chrome.runtime.lastError) {
-            console.error('[BiasNeutralizer] Storage error:', chrome.runtime.lastError);
+            spError('Storage error:', chrome.runtime.lastError);
             resolve(null);
           } else {
             resolve(result);
           }
         });
       } catch (error) {
-        console.error('[BiasNeutralizer] Storage exception:', error);
+        spError('Storage exception:', error);
         resolve(null);
       }
     });
@@ -613,7 +619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Validate required data
     if (!analysisData || !source || !articleInfo) {
-      console.error('[BiasNeutralizer] Invalid data for results page:', {
+      spError('Invalid data for results page:', {
         hasAnalysis: !!analysisData,
         hasSource: !!source,
         hasArticleInfo: !!articleInfo,
@@ -624,12 +630,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const finalReportId = reportId || Date.now();
 
-    console.log('[BiasNeutralizer] ===== SAVING ANALYSIS RESULTS =====');
-    console.log('[BiasNeutralizer] analysisData type:', typeof analysisData);
-    console.log('[BiasNeutralizer] analysisData value:', analysisData);
-    console.log('[BiasNeutralizer] analysisData length:', typeof analysisData === 'string' ? analysisData.length : 'N/A');
-    console.log('[BiasNeutralizer] source:', source);
-    console.log('[BiasNeutralizer] articleInfo:', articleInfo);
+    spLog('Saving analysis results to history...');
+    spLog('analysisData type:', typeof analysisData);
+    spLog('analysisData value:', analysisData);
+    spLog('analysisData length:', typeof analysisData === 'string' ? analysisData.length : 'N/A');
+    spLog('source:', source);
+    spLog('articleInfo:', articleInfo);
 
     // Data is already normalized at source (background.js)
     // Extract text and pre-extracted fields
@@ -657,11 +663,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     };
 
-    console.log('[BiasNeutralizer] ===== RESULT TO STORE =====');
-    console.log('[BiasNeutralizer] resultToStore.summary type:', typeof resultToStore.summary);
-    console.log('[BiasNeutralizer] resultToStore.summary:', resultToStore.summary);
-    console.log('[BiasNeutralizer] resultToStore.raw:', resultToStore.raw);
-    console.log('[BiasNeutralizer] Full resultToStore:', JSON.stringify(resultToStore, null, 2));
+    spLog('Prepared analysis payload for storage');
+    spLog('resultToStore.summary type:', typeof resultToStore.summary);
+    spLog('resultToStore.summary:', resultToStore.summary);
+    spLog('resultToStore.raw:', resultToStore.raw);
+    spLog('Full resultToStore:', JSON.stringify(resultToStore, null, 2));
 
     // ===== WAIT FOR SUMMARY TO COMPLETE =====
     // Give the summary generation 30 seconds to complete
@@ -676,12 +682,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Summary is ready! Embed it in the report
         resultToStore.articleSummary = lastSummary.data;
         resultToStore.summaryUsedCloud = lastSummary.usedCloudFallback || false;
-        console.log('[BiasNeutralizer] ✅ Summary embedded in report');
+        spLog('Embedded summary detected in report payload');
         break;
       }
       
       if (lastSummary && lastSummary.status === 'error') {
-        console.warn('[BiasNeutralizer] ⚠️ Summary failed, saving report without it');
+        spWarn('Summary embedding failed; saving report without it');
         break;
       }
       
@@ -691,7 +697,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     if (summaryAttempts >= maxSummaryWait) {
-      console.warn('[BiasNeutralizer] ⚠️ Summary timeout, saving report without it');
+      spWarn('Summary embedding timed out; saving report without it');
     }
     // ===== END WAIT FOR SUMMARY =====
 
@@ -718,13 +724,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     sessionStorage.setItem('viewReportId', finalReportId);
 
-    console.log('[BiasNeutralizer] Analysis saved to history with ID:', resultToStore.id);
+    spLog('Analysis saved to history with ID:', resultToStore.id);
 
     if (elements.resultsModalContainer) {
       elements.resultsModalContainer.classList.remove('modal-hidden');
       elements.resultsModalContainer.classList.add('modal-visible');
     }
-    console.log('[BiasNeutralizer] Analysis results saved to storage');
+    spLog('Analysis results saved to storage');
   }
 
   // ========================================
@@ -737,7 +743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * This runs independently of the main bias scan.
    */
   async function triggerOnDeviceSummary(articleContent) {
-    console.log('[BiasNeutralizer] Starting independent summary generation...');
+    spLog('Starting independent summary generation...');
 
     // Save a placeholder immediately so the UI can show a "generating" state
     await safeStorageSet({ lastSummary: { status: 'generating' } });
@@ -769,16 +775,16 @@ document.addEventListener('DOMContentLoaded', async () => {
               usedCloudFallback: false 
             } 
           });
-          console.log('[BiasNeutralizer] ✅ On-device summary complete and saved.');
+          spLog('On-device summary generation complete; result saved');
           return;
         }
       } catch (error) {
-        console.warn('[BiasNeutralizer] On-device summary failed, trying cloud fallback:', error);
+        spWarn('On-device summary failed; trying cloud fallback:', error);
       }
     }
 
     // Cloud fallback: Use Gemini API
-    console.log('[BiasNeutralizer] Using cloud fallback for summary...');
+    spLog('Using cloud fallback for summary generation');
     try {
       const settings = await safeStorageGet(['geminiApiKey']);
       const apiKey = settings?.geminiApiKey?.trim();
@@ -827,10 +833,10 @@ ${fullText}`;
           usedCloudFallback: true 
         } 
       });
-      console.log('[BiasNeutralizer] ✅ Cloud summary complete and saved.');
+      spLog('Cloud summary generation complete; result saved');
 
     } catch (error) {
-      console.error('[BiasNeutralizer] Summary generation failed (both on-device and cloud):', error);
+      spError('Summary generation failed (both on-device and cloud):', error);
       await safeStorageSet({ 
         lastSummary: { 
           status: 'error', 
@@ -845,7 +851,7 @@ ${fullText}`;
    */
   async function scanWithOnDeviceAI(articleContent, tabId) {
     if (state.isScanning) {
-      console.warn('[BiasNeutralizer] Scan already in progress');
+      spWarn('On-device scan already in progress; skipping new request');
       return;
     }
 
@@ -857,14 +863,14 @@ ${fullText}`;
     try {
       // --- Immediately trigger the separate on-device summary ---
       triggerOnDeviceSummary(articleContent);
-      console.log('[BiasNeutralizer] ✅ Summary generation started in background');
+      spLog('Background summary generation started');
 
       const availability = await window.LanguageModel.availability();
       if (availability !== 'available') {
         throw new Error(`On-device AI is not ready. Status: ${availability}`);
       }
 
-      console.log("--- Starting On-Device Chunk Analysis ---");
+      spLog('Starting on-device chunk analysis');
       const session = await window.LanguageModel.create();
       state.currentSession = session;
 
@@ -875,14 +881,14 @@ ${fullText}`;
       for (let i = 0; i < fullText.length; i += (chunkSize - overlap)) {
         chunks.push(fullText.substring(i, i + chunkSize));
       }
-      console.log(`Article split into ${chunks.length} chunks.`);
+      spLog(`Article split into ${chunks.length} chunks.`);
 
       // --- Run analysis agents on each chunk in parallel ---
       const analysisPromises = chunks.map(async (chunk) => {
         // We only need the core agents for chunk analysis
         const contextPrompt = AgentPrompts.createContextPrompt(chunk);
         const contextJSON = safeJSON(await session.prompt(contextPrompt), { type: 'Unknown' });
-        console.log('[BiasNeutralizer] Context Analysis Result:', {
+        spLog('Context Analysis Result:', {
           type: contextJSON.type,
           is_opinion: contextJSON.is_opinion_or_analysis,
           confidence: contextJSON.confidence,
@@ -928,10 +934,10 @@ ${fullText}`;
       });
 
       const chunkAnalyses = await Promise.all(analysisPromises);
-      console.log(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
+      spLog(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
 
       // --- Aggregate highlight data from all chunks ---
-      console.log("--- Aggregating Highlight Data ---");
+      spLog('Aggregating highlight data');
       const allLoadedPhrases = [];
       const allBalancedElements = [];
       
@@ -947,13 +953,13 @@ ${fullText}`;
         }
       });
       
-      console.log('[BiasNeutralizer] Aggregated phrases:', {
+      spLog('Aggregated phrases:', {
         biasedCount: allLoadedPhrases.length,
         neutralCount: allBalancedElements.length
       });
 
       // --- Synthesize the results from all chunks ---
-      console.log("--- Synthesizing Final Report ---");
+      spLog('Synthesizing final report');
       const synthesizerPrompt = AgentPrompts.createSynthesizerPrompt(JSON.stringify(chunkAnalyses, null, 2));
       const finalReportMarkdown = await session.prompt(synthesizerPrompt);
 
@@ -963,7 +969,7 @@ ${fullText}`;
       await session.destroy();
 
       // --- Save to history ---
-      console.log("--- Saving to Analysis History ---");
+      spLog('Saving analysis entry to history');
       const reportId = Date.now();
       
       // Call saveAnalysisResults with reportId
@@ -980,12 +986,12 @@ ${fullText}`;
             biasedPhrases: allLoadedPhrases,
             neutralPhrases: allBalancedElements
           });
-          console.log('[BiasNeutralizer] Highlight data sent to content script:', {
+          spLog('Highlight data sent to content script:', {
             biasedCount: allLoadedPhrases.length,
             neutralCount: allBalancedElements.length
           });
         } catch (error) {
-          console.warn('[BiasNeutralizer] Failed to send highlight data:', error);
+          spWarn('Failed to send highlight data:', error);
         }
       }
 
@@ -995,7 +1001,7 @@ ${fullText}`;
       elements.scanButton.disabled = false;
 
     } catch (error) {
-      console.error("On-device chunked scan failed:", error);
+      spError("On-device chunked scan failed:", error);
       if (state.currentSession) {
         try { state.currentSession.destroy(); } catch {}
       }
@@ -1009,7 +1015,7 @@ ${fullText}`;
 
   async function scanWithCloudAI(articleContent) {
     if (state.isScanning) {
-      console.warn('[BiasNeutralizer] Scan already in progress');
+      spWarn('Cloud scan already in progress; ignoring duplicate request');
       return;
     }
 
@@ -1025,10 +1031,10 @@ ${fullText}`;
 
     // --- Immediately trigger the separate on-device summary (runs independently) ---
     triggerOnDeviceSummary(articleContent);
-    console.log('[BiasNeutralizer] ✅ Summary generation started in background');
+    spLog('Background summary generation started');
 
-    console.log('[BiasNeutralizer] Sending scan request to background script');
-    console.log('[BiasNeutralizer] Article content length:', articleContent.fullText?.length);
+    spLog('Sending scan request to background script');
+    spLog('Article content length:', articleContent.fullText?.length);
 
     // Get the active tab ID to pass to background
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1045,47 +1051,47 @@ ${fullText}`;
 
         // Check for errors
         if (chrome.runtime.lastError) {
-          console.error('[BiasNeutralizer] Message error:', chrome.runtime.lastError);
+          spError('Message error:', chrome.runtime.lastError);
           showError(
             'Failed to communicate with the background script.',
-            'Please reload the extension and try again.'
+            'Please refresh the page and try again.'
           );
           return;
         }
 
         // Validate response
         if (!response) {
-          console.error('[BiasNeutralizer] No response from background script');
+          spError('No response from background script');
           showError('No response from analysis service.', 'Please try again.');
           return;
         }
 
         if (response.type === 'SCAN_COMPLETE') {
-          console.log('[BiasNeutralizer] ===== CLOUD AI SCAN COMPLETE =====');
-          console.log('[BiasNeutralizer] Response type:', typeof response.results);
-          console.log('[BiasNeutralizer] Response results:', response.results);
-          console.log('[BiasNeutralizer] Response results length:', typeof response.results === 'string' ? response.results.length : 'N/A');
+          spLog('Cloud AI scan completed');
+          spLog('Response type:', typeof response.results);
+          spLog('Response results:', response.results);
+          spLog('Response results length:', typeof response.results === 'string' ? response.results.length : 'N/A');
           await saveAnalysisResults(response.results, 'cloud', articleContent);
         } else if (response.type === 'SCAN_ERROR') {
-          console.error('[BiasNeutralizer] Background script error:', response.error);
+          spError('Background script error:', response.error);
           showError(
             `Analysis failed: ${response.error || 'Unknown error'}`,
             'Please try again or contact support if the issue persists.'
           );
         } else {
-          console.error('[BiasNeutralizer] Unexpected response type:', response.type);
+          spError('Unexpected response type:', response.type);
           showError('Unexpected response from analysis service.');
         }
       });
     } catch (error) {
-      console.error('[BiasNeutralizer] Exception sending message:', error);
+      spError('Exception sending message:', error);
 
       stopStatusUpdates();
       setView('default');
       state.isScanning = false;
       elements.scanButton.disabled = false;
 
-      showError('Failed to start analysis.', 'Please reload the extension and try again.');
+      showError('Failed to start analysis.', 'Please refresh the page and try again.');
     }
   }
 
@@ -1098,7 +1104,7 @@ ${fullText}`;
    */
   async function handleScanButtonClick() { 
   if (state.isScanning) {
-    console.warn('[BiasNeutralizer] Scan already in progress, ignoring click');
+    spWarn('Scan already in progress; ignoring scan button click');
     return;
   }
   if (!validateChromeAPI()) {
@@ -1114,7 +1120,7 @@ ${fullText}`;
       timestamp: Date.now()
     }
   });
-  console.log('[BiasNeutralizer] ✅ Cleared old summary, ready for new scan');
+  spLog('Cleared previous summary; ready for new scan');
   
   try {
     const settings = await safeStorageGet(['privateMode']);
@@ -1146,12 +1152,12 @@ ${fullText}`;
       scanWithCloudAI(articleContent);
     }
   } catch (error) {
-    console.error('[BiasNeutralizer] Scan initiation failed:', error);
+    spError('Scan initiation failed:', error);
     const errorMessage = (error && typeof error.message === 'string') ? error.message : '';
     if (errorMessage.includes('Receiving end does not exist')) {
       showError(
         'Failed to connect to the page.',
-        'Please REFRESH the web page you want to analyze and try again.'
+        'Please refresh the page you want to analyze and try again.'
       );
     } else {
       const detail = errorMessage || 'Unknown error';
@@ -1170,7 +1176,7 @@ ${fullText}`;
    * Handles cancel scan button click
    */
   function handleCancelScan() {
-    console.log('[BiasNeutralizer] User cancelled scan');
+    spLog('User cancelled scan');
     
     // Stop status updates
     stopStatusUpdates();
@@ -1185,9 +1191,9 @@ ${fullText}`;
     if (state.currentSession) {
       try {
         state.currentSession.destroy();
-        console.log('[BiasNeutralizer] AI session destroyed');
+        spLog('AI session destroyed');
       } catch (error) {
-        console.error('[BiasNeutralizer] Failed to destroy session:', error);
+        spError('Failed to destroy session:', error);
       }
       state.currentSession = null;
     }
@@ -1197,7 +1203,7 @@ ${fullText}`;
       try {
         chrome.runtime.sendMessage({ type: 'CANCEL_SCAN' });
       } catch (error) {
-        console.error('[BiasNeutralizer] Failed to send cancel message:', error);
+        spError('Failed to send cancel message:', error);
       }
     }
     
@@ -1212,7 +1218,7 @@ ${fullText}`;
    */
   async function handleToggleClick(toggleElement, storageKey) {
     const isNowOn = toggleElement.classList.toggle('on');
-    console.log(`[BiasNeutralizer] Toggle ${storageKey}:`, isNowOn);
+    spLog(`Toggle ${storageKey}:`, isNowOn);
     
     const success = await safeStorageSet({ [storageKey]: isNowOn });
     
@@ -1235,7 +1241,7 @@ ${fullText}`;
     try {
       chrome.runtime.openOptionsPage();
     } catch (error) {
-      console.error('[BiasNeutralizer] Failed to open settings:', error);
+      spError('Failed to open settings:', error);
       showError('Failed to open settings page.');
     }
   }
@@ -1248,7 +1254,7 @@ ${fullText}`;
    * Initializes panel state on load
    */
   async function initializePanelState() {
-    console.log('[BiasNeutralizer] Initializing panel state');
+    spLog('Initializing panel state');
 
     // Load settings
     const settings = await safeStorageGet(['privateMode', 'realtimeMode']);
@@ -1256,11 +1262,11 @@ ${fullText}`;
     if (settings) {
       if (settings.privateMode) {
         elements.privateToggle.classList.add('on');
-        console.log('[BiasNeutralizer] Private mode enabled');
+        spLog('Private mode enabled');
       }
       if (settings.realtimeMode) {
         elements.realtimeToggle.classList.add('on');
-        console.log('[BiasNeutralizer] Realtime mode enabled');
+        spLog('Realtime mode enabled');
       }
     }
 
@@ -1277,7 +1283,7 @@ ${fullText}`;
           const url = new URL(tabs[0].url);
           const hostname = url.hostname.replace(/^www\./, '');
           elements.detectionHelper.textContent = `Detected: ${hostname} article ready for analysis`;
-          console.log('[BiasNeutralizer] Current domain:', hostname);
+          spLog('Current domain:', hostname);
         } catch (error) {
           elements.detectionHelper.textContent = 'Ready to analyze an article';
         }
@@ -1285,7 +1291,7 @@ ${fullText}`;
         elements.detectionHelper.textContent = 'Ready to analyze an article';
       }
     } catch (error) {
-      console.error('[BiasNeutralizer] Failed to get tab info:', error);
+      spError('Failed to get tab info:', error);
       elements.detectionHelper.textContent = 'Ready to analyze an article';
     }
   }
@@ -1294,7 +1300,7 @@ ${fullText}`;
    * Sets up event listeners with delegation
    */
   function setupEventListeners() {
-    console.log('[BiasNeutralizer] Setting up event listeners');
+    spLog('Setting up event listeners');
 
     // Use event delegation on main container
     elements.mainContainer.addEventListener('click', (event) => {
@@ -1345,7 +1351,7 @@ ${fullText}`;
         try {
           chrome.tabs.create({ url: chrome.runtime.getURL('reports/reports.html') });
         } catch (error) {
-          console.error('[BiasNeutralizer] Failed to open reports page:', error);
+          spError('Failed to open reports page:', error);
           showError('Failed to open reports page.');
         }
         return;
@@ -1361,7 +1367,7 @@ ${fullText}`;
         try {
           chrome.tabs.create({ url: chrome.runtime.getURL('help/help.html') });
         } catch (error) {
-          console.error('[BiasNeutralizer] Failed to open help page:', error);
+          spError('Failed to open help page:', error);
           showError('Failed to open help page.');
         }
         return;
@@ -1393,14 +1399,14 @@ ${fullText}`;
       }
     });
 
-    console.log('[BiasNeutralizer] Event listeners ready');
+    spLog('Event listeners ready');
   }
 
   /**
    * Cleanup on page unload
    */
   window.addEventListener('beforeunload', () => {
-    console.log('[BiasNeutralizer] Cleaning up before unload');
+    spLog('Cleaning up before unload');
     
     stopStatusUpdates();
     
@@ -1412,7 +1418,7 @@ ${fullText}`;
       try {
         state.currentSession.destroy();
       } catch (error) {
-        console.error('[BiasNeutralizer] Cleanup error:', error);
+        spError('Cleanup error:', error);
       }
     }
   });
@@ -1421,12 +1427,15 @@ ${fullText}`;
   // START APPLICATION
   // ========================================
   
-  console.log('[BiasNeutralizer] Side panel initializing...');
+  spLog('Side panel initializing...');
   initializePanelState();
   setupEventListeners();
   checkGPU();
-  console.log('[BiasNeutralizer] Side panel ready');
+  spLog('Side panel ready');
 });
+
+
+
 
 
 

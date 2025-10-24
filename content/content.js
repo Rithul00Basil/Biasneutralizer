@@ -1,3 +1,8 @@
+const CONTENT_LOG_PREFIX = '[Content]';
+const contentLog = (...args) => console.log(CONTENT_LOG_PREFIX, ...args);
+const contentWarn = (...args) => console.warn(CONTENT_LOG_PREFIX, ...args);
+const contentError = (...args) => console.error(CONTENT_LOG_PREFIX, ...args);
+
 // ========== CONTENT EXTRACTION FUNCTIONS ==========
 
 function extractMainContent() {
@@ -921,11 +926,11 @@ function injectHighlightStyles() {
 
   document.head.appendChild(styleEl);
   stylesInjected = true;
-  console.log('[BiasNeutralizer] Highlight styles injected');
+  contentLog('Highlight styles injected');
 }
 
 function handleHighlightData(biasedPhrases, neutralPhrases) {
-  console.log('[BiasNeutralizer] Highlight data received:', {
+  contentLog('Highlight data received:', {
     biasedCount: biasedPhrases?.length || 0,
     neutralCount: neutralPhrases?.length || 0,
     sampleBiased: biasedPhrases?.[0],
@@ -958,7 +963,7 @@ function handleHighlightData(biasedPhrases, neutralPhrases) {
 function highlightPhrases(phrases, className, dataType) {
   if (!phrases || phrases.length === 0) return;
 
-  console.log('[BiasNeutralizer] Highlighting', phrases.length, dataType, 'phrases with class', className);
+  contentLog('Highlighting', phrases.length, dataType, 'phrases with class', className);
 
   // Get the main content area
   const { element: contentRoot } = pickBestContentRoot();
@@ -978,11 +983,11 @@ function highlightPhrases(phrases, className, dataType) {
     try {
       highlightSinglePhrase(phraseObj, className, dataType, contentRoot, highlightedRanges);
     } catch (error) {
-      console.warn('[BiasNeutralizer] Error highlighting phrase:', error);
+      contentWarn('Error highlighting phrase:', error);
     }
   });
 
-  console.log('[BiasNeutralizer] Highlighting complete for', dataType, 'phrases');
+  contentLog('Highlighting complete for', dataType, 'phrases');
 }
 
 /**
@@ -1007,12 +1012,12 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
       const quotedMatch = phraseObj.explanation.match(/"([^"]+)"/);
       if (quotedMatch) {
         phrase = quotedMatch[1];
-        console.log('[BiasNeutralizer] Extracted phrase from quotes in explanation:', phrase);
+        contentLog('Extracted phrase from quotes in explanation:', phrase);
       } else {
         // Use first sentence or first 50 chars
         const sentences = phraseObj.explanation.split(/[.!?]/);
         phrase = sentences[0].slice(0, 50).trim();
-        console.log('[BiasNeutralizer] Extracted phrase from explanation text:', phrase);
+        contentLog('Extracted phrase from explanation text:', phrase);
       }
     }
     
@@ -1023,12 +1028,12 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
 
   // Defensive check after extraction
   if (!phrase || typeof phrase !== 'string') {
-    console.warn('[BiasNeutralizer] Neutral phrase missing text:', phraseObj);
+    contentWarn('Neutral phrase missing text:', phraseObj);
     return;
   }
   
   if (phrase.trim().length === 0) {
-    console.warn('[BiasNeutralizer] Empty phrase text:', phraseObj);
+    contentWarn('Empty phrase text:', phraseObj);
     return;
   }
 
@@ -1065,7 +1070,7 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
         highlightedRanges.add(getRangeIdentifier(match.range));
       }
     } catch (error) {
-      console.warn('[BiasNeutralizer] Failed to highlight match:', error);
+      contentWarn('Failed to highlight match:', error);
     }
   });
 }
@@ -1186,7 +1191,7 @@ function mapOffsetToRange(textNodes, startOffset, endOffset) {
     range.setEnd(endNode, endPos);
     return range;
   } catch (e) {
-    console.warn('[BiasNeutralizer] Range creation failed:', e);
+    contentWarn('Range creation failed:', e);
     return null;
   }
 }
@@ -1224,7 +1229,7 @@ function setupHighlightClickListeners() {
   // Add with capture phase for reliability
   document.addEventListener('click', handleDocumentClick, true);
 
-  console.log('[BiasNeutralizer] Click listeners bound with capture phase');
+  contentLog('Click listeners bound with capture phase');
 }
 
 function handleDocumentClick(event) {
@@ -1232,7 +1237,7 @@ function handleDocumentClick(event) {
 
   // Log all clicks on highlights for debugging
   if (target.classList.contains('bias-highlight') || target.classList.contains('neutral-highlight')) {
-    console.log('[BiasNeutralizer] Highlight clicked:', {
+    contentLog('Highlight clicked:', {
       type: target.classList.contains('bias-highlight') ? 'biased' : 'neutral',
       text: target.textContent,
       dataset: target.dataset
@@ -1306,14 +1311,14 @@ function showBiasedPopup(highlightElement) {
   });
 
   currentPopup = popup;
-  console.log('[BiasNeutralizer] Biased popup shown');
+  contentLog('Biased popup shown');
 }
 
 /**
  * Neutralize text and show result in popup
  */
 async function handleNeutralizeInPopup(originalText, explanation, popup, suggestedAlternative) {
-  console.log('[BiasNeutralizer] Neutralizing:', originalText);
+  contentLog('Neutralizing:', originalText);
 
   const neutralBtn = popup.querySelector('#neutralize-btn');
   const neutralSection = popup.querySelector('#neutral-result');
@@ -1332,7 +1337,7 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
     }
 
     const availability = await Rewriter.availability();
-    console.log('[BiasNeutralizer] Rewriter availability:', availability);
+    contentLog('Rewriter availability:', availability);
 
     if (availability === 'no') {
       throw new Error('MODEL_NOT_AVAILABLE');
@@ -1378,10 +1383,10 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
     neutralBtn.textContent = 'Done';
     neutralBtn.disabled = true;
 
-    console.log('[BiasNeutralizer] Neutralization complete');
+    contentLog('Neutralization complete');
 
   } catch (error) {
-    console.error('[BiasNeutralizer] Neutralization failed:', error);
+    contentError('Neutralization failed:', error);
     
     if (error.message === 'REWRITER_NOT_SUPPORTED') {
       neutralTextEl.innerHTML = `
@@ -1445,7 +1450,7 @@ function showNeutralPopup(highlightElement) {
   }, 4000);
 
   currentPopup = popup;
-  console.log('[BiasNeutralizer] Neutral popup shown');
+  contentLog('Neutral popup shown');
 }
 
 function positionPopup(popup, targetElement) {
@@ -1476,7 +1481,7 @@ function closePopup() {
 }
 
 function handleKnowMore() {
-  console.log('[BiasNeutralizer] Opening results page');
+  contentLog('Opening results page');
   chrome.runtime.sendMessage({ type: 'OPEN_RESULTS_PAGE' });
   closePopup();
 }
@@ -1487,7 +1492,7 @@ let currentRewriterSession = null;
 let currentModal = null;
 
 async function handleNeutralize(originalText, popup, suggestedAlternative) {
-  console.log('[BiasNeutralizer] Neutralizing:', originalText);
+  contentLog('Neutralizing:', originalText);
 
   // Close the small popup
   closePopup();
@@ -1522,7 +1527,7 @@ async function openNeutralizationModal(originalText, suggestedAlternative) {
 
     // Step 3: Check Model Availability
     const availability = await Rewriter.availability();
-    console.log('[BiasNeutralizer] Rewriter availability:', availability);
+    contentLog('Rewriter availability:', availability);
 
     if (availability === 'available') {
       // Case 1: Model is ready
@@ -1538,7 +1543,7 @@ async function openNeutralizationModal(originalText, suggestedAlternative) {
       throw new Error('Your device doesn\'t support on-device AI (need 22GB free space, 4GB+ GPU or 16GB+ RAM)');
     }
   } catch (error) {
-    console.error('[BiasNeutralizer] Neutralization error:', error);
+    contentError('Neutralization error:', error);
     showModalError(modal, error.message, suggestedAlternative);
   }
 }
@@ -1582,9 +1587,9 @@ function setupModalCloseHandlers(overlay, modal) {
     if (currentRewriterSession) {
       try {
         currentRewriterSession.destroy();
-        console.log('[BiasNeutralizer] Rewriter session destroyed');
+        contentLog('Rewriter session destroyed');
       } catch (error) {
-        console.warn('[BiasNeutralizer] Failed to destroy session:', error);
+        contentWarn('Failed to destroy session:', error);
       }
       currentRewriterSession = null;
     }
@@ -1738,7 +1743,7 @@ async function handleModelDownload(modal, originalText, suggestedAlternative) {
             monitor(m) {
               m.addEventListener('downloadprogress', (e) => {
                 const percent = Math.round(e.loaded * 100);
-                console.log(`[BiasNeutralizer] Download progress: ${percent}%`);
+                contentLog(`Download progress: ${percent}%`);
                 updateDownloadProgress(percent);
               });
             }
@@ -1834,10 +1839,10 @@ async function performNeutralization(modal, originalText, suggestedAlternative) 
     // Remove streaming cursor when complete
     neutralSection.classList.remove('streaming');
     
-    console.log('[BiasNeutralizer] Neutralization complete:', fullText);
+    contentLog('Neutralization complete:', fullText);
 
   } catch (error) {
-    console.error('[BiasNeutralizer] Neutralization failed:', error);
+    contentError('Neutralization failed:', error);
     showModalError(modal, error.message, suggestedAlternative);
   }
 }
@@ -1920,3 +1925,5 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+

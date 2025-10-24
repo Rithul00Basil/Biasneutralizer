@@ -1,11 +1,16 @@
-﻿(() => {
+(() => {
   'use strict';
+
+  const RESULTS_LOG_PREFIX = '[Results]';
+  const resultsLog = (...args) => console.log(RESULTS_LOG_PREFIX, ...args);
+  const resultsWarn = (...args) => console.warn(RESULTS_LOG_PREFIX, ...args);
+  const resultsError = (...args) => console.error(RESULTS_LOG_PREFIX, ...args);
 
   // ========================================
   // SUMMARY LOADER
   // ========================================
   async function loadAndRenderSummary() {
-    console.log('[Results] Loading summary...');
+    resultsLog('Loading summary...');
 
     const summarySection = document.getElementById('summary-content');
     const summaryCard = document.querySelector('.analysis-card--summary');
@@ -42,13 +47,13 @@
         if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
           const note = document.createElement('span');
           note.className = 'cloud-fallback-note';
-          note.textContent = 'â„¹ï¸ Cloud-generated summary';
+          note.textContent = 'ℹ️ Cloud-generated summary';
           note.title = 'Summary generated using Gemini API (on-device model unavailable)';
           cardHeader.appendChild(note);
         }
       }
       
-      console.log('[Results] âœ… Summary loaded from embedded report data');
+      resultsLog('Summary loaded from embedded report data');
       return;
     }
     
@@ -79,15 +84,15 @@
           if (cardHeader && !cardHeader.querySelector('.cloud-fallback-note')) {
             const note = document.createElement('span');
             note.className = 'cloud-fallback-note';
-            note.textContent = 'â„¹ï¸ Cloud-generated summary';
+            note.textContent = 'ℹ️ Cloud-generated summary';
             note.title = 'Summary generated using Gemini API (on-device model unavailable)';
             cardHeader.appendChild(note);
           }
         }
         
-        console.log('[Results] âœ… Summary loaded from lastSummary (active scan)');
+        resultsLog('Summary loaded from lastSummary (active scan)');
       } else if (summaryData.status === 'generating') {
-        summarySection.innerHTML = '<p class="placeholder-text">â³ Generating summary...</p>';
+        summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
       } else if (summaryData.status === 'error') {
         clearInterval(pollInterval);
         summarySection.innerHTML = `<p class="placeholder-text">Summary generation failed: ${summaryData.data}</p>`;
@@ -109,12 +114,12 @@
         try {
           chrome.storage.local.get(keys, (res) => {
             if (chrome.runtime.lastError) {
-              console.error('[Results] storage.get error', chrome.runtime.lastError);
+              resultsError('storage.get failed:', chrome.runtime.lastError);
               resolve({});
             } else resolve(res || {});
           });
         } catch (e) { 
-          console.error('[Results] storage.get exception', e); 
+          resultsError('storage.get threw exception:', e); 
           resolve({}); 
         }
       } else {
@@ -137,12 +142,12 @@
         try {
           chrome.storage.local.set(obj, () => {
             if (chrome.runtime.lastError) {
-              console.error('[Results] storage.set error', chrome.runtime.lastError);
+              resultsError('storage.set failed:', chrome.runtime.lastError);
               resolve(false);
             } else resolve(true);
           });
         } catch (e) { 
-          console.error('[Results] storage.set exception', e); 
+          resultsError('storage.set threw exception:', e); 
           resolve(false); 
         }
       } else {
@@ -196,7 +201,7 @@
     html = html.replace(/_(.+?)_/g, '<em>$1</em>');
 
     // Unordered lists
-    html = html.replace(/^[-â€¢*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^[-•*] (.+)$/gm, '<li>$1</li>');
     html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
     html = html.replace(/<\/ul>\s*<ul>/g, ''); // Merge consecutive lists
 
@@ -231,7 +236,7 @@
           errorColor: '#cc0000'
         });
       } catch (error) {
-        console.warn('[Results] LaTeX rendering error:', error);
+        resultsWarn('LaTeX rendering error:', error);
       }
     }
   }
@@ -314,13 +319,13 @@
       if (assistantOverlay) {
         assistantOverlay.style.display = 'none';
         assistantOverlay.classList.remove('visible');
-        console.log('[Results] âœ… Hidden #assistant-overlay (display + class)');
+        resultsLog('Assistant overlay hidden (display + class)');
       }
 
       document.body.style.pointerEvents = 'auto';
-      console.log('[Results] âœ… Set pointer-events to auto');
+      resultsLog('Pointer events restored to auto');
     } catch (err) {
-      console.error('[Results] Error initializing overlays:', err);
+      resultsError('Error initializing overlays:', err);
     }
 
     cacheEls();
@@ -366,7 +371,7 @@
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName === 'local' && changes.lastAnalysis) {
-          console.log('[BiasNeutralizer Results] New analysis detected, refreshing...');
+          resultsLog('New analysis detected, refreshing...');
           refreshResults();
         }
       });
@@ -402,7 +407,7 @@
   // REFRESH RESULTS
   // ========================================
   async function refreshResults() {
-    console.log('[DEBUG] refreshResults: Function started.');
+    resultsLog('Debug: refreshResults function started');
   
     // Show loading state at the very beginning
     if (els.loadingState) els.loadingState.classList.remove('hidden');
@@ -418,7 +423,7 @@
       // We create a function that performs the actual data fetching.
       const dataFetchOperation = async () => {
         const { lastAnalysis, analysisHistory = [] } = await storageGet(['lastAnalysis', 'analysisHistory']);
-        console.log('[DEBUG] refreshResults: Fetched data from storage.', { lastAnalysis, analysisHistory });
+        resultsLog('Debug: refreshResults fetched data from storage', { lastAnalysis, analysisHistory });
   
         const urlParams = new URLSearchParams(window.location.search);
         const viewReportId = urlParams.get('reportId');
@@ -447,7 +452,7 @@
   
       // If we get here, it means the data fetch completed in time.
       if (analysisData.timestamp && analysisData.timestamp === lastRenderedTs) {
-        console.log('[BiasNeutralizer Results] No change since last render.');
+        resultsLog('No change since last render.');
         return; // The 'finally' block will still run to hide the spinner.
       }
   
@@ -456,8 +461,8 @@
   
     } catch (error) {
       // This block now catches both regular errors AND the timeout error.
-      console.error('[DEBUG] refreshResults: Caught error!', error);
-      console.error('[BiasNeutralizer Results] Failed to load results:', error);
+      resultsError('Debug: refreshResults: Caught error!', error);
+      resultsError('Failed to load results:', error);
   
       // Display a more specific error message for timeouts.
       const errorMessage = error.message.includes('timed out')
@@ -476,18 +481,18 @@
       }
     } finally {
       // This block is the safety net. It ALWAYS runs, hiding the spinner.
-      console.log('[DEBUG] refreshResults: Finally block - ensuring UI is in stable state');
+      resultsLog('Debug: refreshResults finally block executed');
   
       const loadingState = document.getElementById('loading-state');
       if (loadingState) {
         loadingState.classList.add('hidden');
-        console.log('[Results] âœ… Ensured #loading-state is hidden');
+        resultsLog('Ensured loading state is hidden');
       }
   
       const mainContent = document.getElementById('main-content');
       if (mainContent) {
         mainContent.classList.remove('hidden');
-        console.log('[Results] âœ… Ensured #main-content is visible');
+        resultsLog('Ensured #main-content is visible');
       }
     }
   }
@@ -495,8 +500,8 @@
   function renderEmpty() {
     els.title.textContent = 'No analysis yet';
     els.title.href = '#';
-    els.domain.textContent = 'â€”';
-    els.time.textContent = 'â€”';
+    els.domain.textContent = '—';
+    els.time.textContent = '—';
     els.source.hidden = true;
     els.keyFindings.innerHTML = '<p class="placeholder-text">No analysis has been run yet. Open the side panel to start a scan.</p>';
     els.loadedLanguage.innerHTML = '<p class="placeholder-text">No data available</p>';
@@ -507,15 +512,15 @@
   // RENDER
   // ========================================
   async function render(data) {
-    console.log('[DEBUG] render: Function started with data:', data);
-    console.log('[BiasNeutralizer Results] ===== RENDERING ANALYSIS =====');
-    console.log('[BiasNeutralizer Results] Raw data:', data);
+    resultsLog('Debug: render function started with data:', data);
+    resultsLog('Rendering analysis payload');
+    resultsLog('Raw data:', data);
 
     const { url, title, summary, source, timestamp, raw } = sanitizeAnalysisData(data);
     
-    console.log('[BiasNeutralizer Results] Sanitized data:');
-    console.log('[BiasNeutralizer Results] - summary:', summary);
-    console.log('[BiasNeutralizer Results] - raw:', raw);
+    resultsLog('Sanitized data:');
+    resultsLog('- summary:', summary);
+    resultsLog('- raw:', raw);
     
     const domain = safeDomain(url);
     els.title.textContent = title || (domain ? `Article on ${domain}` : 'Article');
@@ -528,8 +533,8 @@
       els.title.removeAttribute('target');
       els.title.removeAttribute('rel');
     }
-    els.domain.textContent = domain || 'â€”';
-    els.time.textContent = timestamp ? formatTime(timestamp) : 'â€”';
+    els.domain.textContent = domain || '—';
+    els.time.textContent = timestamp ? formatTime(timestamp) : '—';
     if (source) { 
       els.source.textContent = source; 
       els.source.hidden = false; 
@@ -546,7 +551,7 @@
     
     let md = normalizeModeratorSections(summaryText);
     // Remove truncation - let full analysis display
-    // if (md.length > 200000) md = md.slice(0, 200000) + '\n\nâ€¦';
+    // if (md.length > 200000) md = md.slice(0, 200000) + '\n\n…';
 
     await parseAndRenderAnalysis(md, raw);
 
@@ -558,7 +563,7 @@
     const extracted = extractBiasRating(md, data);
     const ratingEl = document.getElementById('bias-rating');
     const confidenceEl = document.getElementById('bias-confidence');
-    console.log('[BiasNeutralizer Results] Final bias rating resolved:', extracted);
+    resultsLog('Final bias rating resolved:', extracted);
     
     if (ratingEl) {
       ratingEl.style.opacity = '0';
@@ -592,25 +597,25 @@
     }
 
     // === CRITICAL FIX: Reveal main content after successful render ===
-    console.log('[DEBUG] render: All rendering logic complete. Revealing main content.');
+    resultsLog('Debug: render completed; revealing main content');
     try {
       // Ensure main content is visible and interactive
       const mainContent = document.getElementById('main-content');
       if (mainContent) {
         mainContent.classList.remove('hidden');
-        console.log('[Results] âœ… Removed hidden class from #main-content');
+        resultsLog('Removed hidden class from #main-content');
       } else {
-        console.error('[Results] âŒ #main-content element not found!');
+        resultsError('#main-content element not found');
       }
       
       // Ensure loading state is hidden (if it still exists)
       const loadingState = document.getElementById('loading-state');
       if (loadingState) {
         loadingState.classList.add('hidden');
-        console.log('[Results] âœ… Hidden #loading-state');
+        resultsLog('Hid #loading-state element');
       }
     } catch (err) {
-      console.error('[Results] âŒ Error revealing main content:', err);
+      resultsError('Error revealing main content:', err);
     }
   }
 
@@ -660,9 +665,9 @@
       out.extractedRating = typeof d.extractedRating === 'string' ? d.extractedRating.trim() : (d.extractedRating ?? null);
       out.extractedConfidence = typeof d.extractedConfidence === 'string' ? d.extractedConfidence.trim() : (d.extractedConfidence ?? null);
       
-      console.log('[BiasNeutralizer Results] sanitizeAnalysisData output:', out);
+      resultsLog('sanitizeAnalysisData output:', out);
     } catch (e) {
-      console.error('[BiasNeutralizer Results] Error in sanitizeAnalysisData:', e);
+      resultsError('Error in sanitizeAnalysisData:', e);
       out.url = '';
       out.title = '';
       out.summary = '';
@@ -698,13 +703,13 @@
     for (const candidate of ratingCandidates) {
       if (typeof candidate.value === 'string' && candidate.value.trim()) {
         foundRating = candidate.value.trim();
-        console.log('[BiasNeutralizer Results] Using stored rating from', candidate.path, ':', foundRating);
+        resultsLog('Using stored rating from', candidate.path, ':', foundRating);
         break;
       }
     }
 
     if (!foundRating) {
-      console.log('[BiasNeutralizer Results] Stored rating not found; will attempt to parse from text.');
+      resultsLog('Stored rating not found; will attempt to parse from text.');
     }
 
     const confidenceCandidates = [
@@ -716,13 +721,13 @@
     for (const candidate of confidenceCandidates) {
       if (typeof candidate.value === 'string' && candidate.value.trim()) {
         foundConfidence = candidate.value.trim();
-        console.log('[BiasNeutralizer Results] Using stored confidence from', candidate.path, ':', foundConfidence);
+        resultsLog('Using stored confidence from', candidate.path, ':', foundConfidence);
         break;
       }
     }
 
     if (!foundConfidence) {
-      console.log('[BiasNeutralizer Results] Stored confidence not found; will attempt to parse from text.');
+      resultsLog('Stored confidence not found; will attempt to parse from text.');
     }
 
     const textIsString = typeof text === 'string' && text.trim().length;
@@ -734,15 +739,15 @@
           const parsedRating = extractRating(text);
           if (parsedRating && parsedRating.trim()) {
             finalRating = parsedRating.trim();
-            console.log('[BiasNeutralizer Results] Rating parsed from text:', finalRating);
+            resultsLog('Rating parsed from text:', finalRating);
           }
         } catch (err) {
-          console.warn('[BiasNeutralizer Results] Failed to parse rating from text:', err);
+          resultsWarn('Failed to parse rating from text:', err);
         }
       }
       if (!finalRating) {
         finalRating = 'Unclear';
-        console.warn('[BiasNeutralizer Results] Falling back to default rating:', finalRating);
+        resultsWarn('Falling back to default rating:', finalRating);
       }
     }
 
@@ -753,15 +758,15 @@
           const parsedConfidence = extractConfidence(text);
           if (parsedConfidence && parsedConfidence.trim()) {
             finalConfidence = parsedConfidence.trim();
-            console.log('[BiasNeutralizer Results] Confidence parsed from text:', finalConfidence);
+            resultsLog('Confidence parsed from text:', finalConfidence);
           }
         } catch (err) {
-          console.warn('[BiasNeutralizer Results] Failed to parse confidence from text:', err);
+          resultsWarn('Failed to parse confidence from text:', err);
         }
       }
       if (!finalConfidence) {
         finalConfidence = 'Medium';
-        console.warn('[BiasNeutralizer Results] Falling back to default confidence:', finalConfidence);
+        resultsWarn('Falling back to default confidence:', finalConfidence);
       }
     }
 
@@ -831,8 +836,8 @@
     window.__analysisSections = sections;
     window.__rawAnalysis = raw;
     
-    console.log('[Results] parseAndRenderAnalysis - sections:', sections);
-    console.log('[Results] parseAndRenderAnalysis - raw:', raw);
+    resultsLog('parseAndRenderAnalysis sections:', sections);
+    resultsLog('parseAndRenderAnalysis raw:', raw);
     
     const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
     
@@ -905,8 +910,8 @@
     const raw = window.__rawAnalysis;
     const sections = window.__analysisSections || {};
     
-    console.log('[Results] renderLoadedFromRaw - raw:', raw);
-    console.log('[Results] renderLoadedFromRaw - sections:', sections);
+    resultsLog('renderLoadedFromRaw raw:', raw);
+    resultsLog('renderLoadedFromRaw sections:', sections);
     
     const analysisData = (raw && raw.analysis) ? raw.analysis : raw;
     
@@ -998,7 +1003,7 @@
       }
       
       if (currentSection) {
-        const bulletMatch = trimmed.match(/^[-â€¢*]\s+(.+)$/);
+        const bulletMatch = trimmed.match(/^[-•*]\s+(.+)$/);
         if (bulletMatch) {
           currentItems.push(bulletMatch[1].trim());
         } else if (trimmed.length > 0 && !trimmed.match(/^[=#*-]+$/)) {
@@ -1038,7 +1043,7 @@
       examples = raw.languageAnalysis.slice(0, 5);
     } else {
       examples = items.slice(0, 5).map(item => {
-        const arrowMatch = item.match(/["'](.+?)["']\s*[â†’'-]\s*(.+)/);
+        const arrowMatch = item.match(/["'](.+?)["']\s*[→'-]\s*(.+)/);
         if (arrowMatch) {
           return {
             phrase: arrowMatch[1],
@@ -1140,7 +1145,7 @@
         
         const prosecutorTitle = document.createElement('div');
         prosecutorTitle.className = 'tribunal-section-title';
-        prosecutorTitle.textContent = 'âš¡ Prosecutor\'s Evidence';
+        prosecutorTitle.textContent = '⚡ Prosecutor\'s Evidence';
         prosecutorSection.appendChild(prosecutorTitle);
         
         const evidenceList = document.createElement('ul');
@@ -1162,7 +1167,7 @@
         
         const defenseTitle = document.createElement('div');
         defenseTitle.className = 'tribunal-section-title';
-        defenseTitle.textContent = "ðŸ›¡ï¸ Defense's Rebuttal";
+        defenseTitle.textContent = "🛡️ Defense's Rebuttal";
         defenseSection.appendChild(defenseTitle);
         
         const rebuttalContent = document.createElement('p');
@@ -1191,7 +1196,7 @@
         
         const investigatorTitle = document.createElement('div');
         investigatorTitle.className = 'tribunal-section-title';
-        investigatorTitle.textContent = "ðŸ”¬ Investigator's Facts";
+        investigatorTitle.textContent = "🔬 Investigator's Facts";
         investigatorSection.appendChild(investigatorTitle);
         
         const factsContent = document.createElement('p');
@@ -1298,7 +1303,7 @@
         const jb = document.createElement('div');
         jb.className = 'tribunal-section-content';
         const ruling = verdict.ruling ? `<strong>${verdict.ruling}</strong>` : '';
-        const reasoning = verdict.reasoning ? ` â€” ${verdict.reasoning}` : '';
+        const reasoning = verdict.reasoning ? ` — ${verdict.reasoning}` : '';
         jb.innerHTML = `${ruling}${reasoning}`;
         judge.appendChild(jb);
         wrap.appendChild(judge);
@@ -1392,7 +1397,7 @@
     try {
       await streamAssistantResponse(userInput, typingIndicator);
     } catch (error) {
-      console.error("Assistant Error:", error);
+      resultsError("Assistant Error:", error);
       typingIndicator.textContent = "Sorry, I encountered an error. Please try again.";
     } finally {
       els.assistantInput.disabled = false;
@@ -1472,7 +1477,7 @@
       conversationHistory.push({ role: 'model', parts: [{ text: fullResponseText }] });
 
     } catch (error) {
-      console.error("On-device assistant error:", error);
+      resultsError("On-device assistant error:", error);
       messageElement.classList.remove('typing-indicator');
       messageElement.textContent = `Sorry, the on-device assistant encountered an error: ${error.message}`;
     }
@@ -1646,4 +1651,10 @@ ${analysisContext}`;
   document.documentElement.style.scrollBehavior = 'smooth';
 
 })();
+
+
+
+
+
+
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
 
  * BiasNeutralizer Background Service Worker
 
@@ -8,6 +8,11 @@
 
 import { AgentPrompts } from '../shared/prompts.js';
 
+const BG_LOG_PREFIX = '[Background]';
+const bgLog = (...args) => console.log(BG_LOG_PREFIX, ...args);
+const bgWarn = (...args) => console.warn(BG_LOG_PREFIX, ...args);
+const bgError = (...args) => console.error(BG_LOG_PREFIX, ...args);
+
 // === FIX #1: Configure sidepanel at startup ===
 
 (async () => {
@@ -16,11 +21,11 @@ import { AgentPrompts } from '../shared/prompts.js';
 
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-    console.log('[BiasNeutralizer Background] Side panel behavior configured at startup');
+    bgLog('Side panel behavior configured at startup');
 
   } catch (error) {
 
-    console.error('[BiasNeutralizer Background] Failed to set panel behavior at startup:', error);
+    bgError('Failed to set panel behavior at startup:', error);
 
   }
 
@@ -129,10 +134,10 @@ function normalizeForRenderer(text, contextJSON = null) {
 // Helper extractors
 
 function extractRating(text) {
-  console.log('[BiasNeutralizer] extractRating: Starting extraction from text length:', text?.length || 0);
+  bgLog('extractRating: Starting extraction from text length:', text?.length || 0);
   
   if (!text || typeof text !== 'string') {
-    console.log('[BiasNeutralizer] extractRating: Invalid input, falling back to default');
+    bgLog('extractRating: Invalid input, falling back to default');
     return 'Unclear';
   }
 
@@ -145,7 +150,7 @@ function extractRating(text) {
     // Pattern 3: Without bold markers
     /Overall Bias Assessment:\s*:?\s*\[?([^\]\n]+)\]?/i,
     // Pattern 4: With colon variations
-    /Overall\s+Bias\s+Assessment\s*[:：]\s*\[?([^\]\n]+)\]?/i
+    /Overall\s+Bias\s+Assessment\s*[::]\s*\[?([^\]\n]+)\]?/i
   ];
 
   for (const pattern of ratingHeaderPatterns) {
@@ -176,11 +181,11 @@ function extractRating(text) {
       if (allowedRatings.some(r => r.toLowerCase() === normalized.toLowerCase())) {
         // Return with correct casing
         const finalResult = allowedRatings.find(r => r.toLowerCase() === normalized.toLowerCase()) || normalized;
-        console.log('[BiasNeutralizer] extractRating: Success via markdown pattern ->', finalResult);
+        bgLog('extractRating: Success via markdown pattern ->', finalResult);
         return finalResult;
       }
       
-      console.log('[BiasNeutralizer] extractRating: Found value but not in allowed list:', result);
+      bgLog('extractRating: Found value but not in allowed list:', result);
     }
   }
 
@@ -198,13 +203,13 @@ function extractRating(text) {
         .trim()
         .replace(/[\[\]]/g, '')
         .replace(/^["']|["']$/g, '');
-      console.log('[BiasNeutralizer] extractRating: Success via simple pattern ->', result);
+      bgLog('extractRating: Success via simple pattern ->', result);
       return result;
     }
   }
 
   // Strategy 3: Try JSON parsing
-  console.log('[BiasNeutralizer] extractRating: Trying JSON parsing...');
+  bgLog('extractRating: Trying JSON parsing...');
   const parsedJson = safeJSON(text, null);
   
   if (parsedJson && typeof parsedJson === 'object') {
@@ -222,11 +227,11 @@ function extractRating(text) {
     for (const value of jsonPaths) {
       if (value && typeof value === 'string') {
         const result = value.trim();
-        console.log('[BiasNeutralizer] extractRating: Success via JSON path ->', result);
+        bgLog('extractRating: Success via JSON path ->', result);
         return result;
       }
     }
-    console.log('[BiasNeutralizer] extractRating: JSON parsed but no rating found in expected paths');
+    bgLog('extractRating: JSON parsed but no rating found in expected paths');
   }
 
   // Strategy 4: Last resort - scan for rating keywords in context
@@ -241,22 +246,22 @@ function extractRating(text) {
       const allowedRatings = ['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear'];
       if (allowedRatings.some(r => potentialRating.toLowerCase().includes(r.toLowerCase()))) {
         const result = allowedRatings.find(r => potentialRating.toLowerCase().includes(r.toLowerCase()));
-        console.log('[BiasNeutralizer] extractRating: Success via context scan ->', result);
+        bgLog('extractRating: Success via context scan ->', result);
         return result;
       }
     }
   }
 
   // Fallback
-  console.log('[BiasNeutralizer] extractRating: All strategies failed, falling back to default "Unclear"');
+  bgLog('extractRating: All strategies failed, falling back to default "Unclear"');
   return 'Unclear';
 }
 
 function extractConfidence(text) {
-  console.log('[BiasNeutralizer] extractConfidence: Starting extraction from text length:', text?.length || 0);
+  bgLog('extractConfidence: Starting extraction from text length:', text?.length || 0);
   
   if (!text || typeof text !== 'string') {
-    console.log('[BiasNeutralizer] extractConfidence: Invalid input, falling back to default');
+    bgLog('extractConfidence: Invalid input, falling back to default');
     return 'Medium';
   }
 
@@ -269,8 +274,8 @@ function extractConfidence(text) {
     // Pattern 3: Without bold markers
     /Confidence:\s*:?\s*\[?([^\]\n]+)\]?/i,
     // Pattern 4: With variations
-    /Confidence\s+Level\s*[:：]\s*\[?([^\]\n]+)\]?/i,
-    /Confidence\s*[:：]\s*\[?([^\]\n]+)\]?/i
+    /Confidence\s+Level\s*[::]\s*\[?([^\]\n]+)\]?/i,
+    /Confidence\s*[::]\s*\[?([^\]\n]+)\]?/i
   ];
 
   for (const pattern of confidenceHeaderPatterns) {
@@ -299,11 +304,11 @@ function extractConfidence(text) {
       if (allowedLevels.some(l => l.toLowerCase() === normalized.toLowerCase())) {
         // Return with correct casing
         const finalResult = allowedLevels.find(l => l.toLowerCase() === normalized.toLowerCase()) || normalized;
-        console.log('[BiasNeutralizer] extractConfidence: Success via markdown pattern ->', finalResult);
+        bgLog('extractConfidence: Success via markdown pattern ->', finalResult);
         return finalResult;
       }
       
-      console.log('[BiasNeutralizer] extractConfidence: Found value but not in allowed list:', result);
+      bgLog('extractConfidence: Found value but not in allowed list:', result);
     }
   }
 
@@ -321,13 +326,13 @@ function extractConfidence(text) {
         .trim()
         .replace(/[\[\]]/g, '')
         .replace(/^["']|["']$/g, '');
-      console.log('[BiasNeutralizer] extractConfidence: Success via simple pattern ->', result);
+      bgLog('extractConfidence: Success via simple pattern ->', result);
       return result;
     }
   }
 
   // Strategy 3: Try JSON parsing
-  console.log('[BiasNeutralizer] extractConfidence: Trying JSON parsing...');
+  bgLog('extractConfidence: Trying JSON parsing...');
   const parsedJson = safeJSON(text, null);
   
   if (parsedJson && typeof parsedJson === 'object') {
@@ -345,11 +350,11 @@ function extractConfidence(text) {
     for (const value of jsonPaths) {
       if (value && typeof value === 'string') {
         const result = value.trim();
-        console.log('[BiasNeutralizer] extractConfidence: Success via JSON path ->', result);
+        bgLog('extractConfidence: Success via JSON path ->', result);
         return result;
       }
     }
-    console.log('[BiasNeutralizer] extractConfidence: JSON parsed but no confidence found in expected paths');
+    bgLog('extractConfidence: JSON parsed but no confidence found in expected paths');
   }
 
   // Strategy 4: Last resort - scan for confidence keywords in context
@@ -364,14 +369,14 @@ function extractConfidence(text) {
       const allowedLevels = ['High', 'Medium', 'Low'];
       if (allowedLevels.some(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()))) {
         const result = allowedLevels.find(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()));
-        console.log('[BiasNeutralizer] extractConfidence: Success via context scan ->', result);
+        bgLog('extractConfidence: Success via context scan ->', result);
         return result;
       }
     }
   }
 
   // Fallback
-  console.log('[BiasNeutralizer] extractConfidence: All strategies failed, falling back to default "Medium"');
+  bgLog('extractConfidence: All strategies failed, falling back to default "Medium"');
   return 'Medium';
 }
 
@@ -383,7 +388,7 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
   const isJudge = agentRole === 'judge';
 
-  // Deep mode: gemini-2.5-pro → gemini-flash-latest (with max thinking)
+  // Deep mode: gemini-2.5-pro ? gemini-flash-latest (with max thinking)
   // Quick mode: gemini-flash-lite-latest (except Judge uses gemini-2.5-flash with 2048 thinking)
 
   let primary, fallbacks, models;
@@ -408,7 +413,8 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
   for (let attempt = 0; attempt < retries; attempt++) {
 
-    const delayMs = 400 * Math.pow(attempt + 1, 2) + Math.floor(Math.random() * 200);
+    const attemptNumber = attempt + 1;
+    const delayMs = 400 * Math.pow(attemptNumber, 2) + Math.floor(Math.random() * 200);
 
     for (const model of models) {
 
@@ -468,6 +474,8 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
       try {
 
+        bgLog(`Calling Gemini model ${model} (attempt ${attemptNumber}/${retries})`);
+
         const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(body), signal });
 
         const data = await resp.json().catch(() => ({}));
@@ -512,7 +520,13 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
         if (!text) throw new Error('API returned empty response.');
 
-        try { console.log('[BiasNeutralizer] Gemini request:', { model, url: `.../models/${model}:generateContent`, hasSignal: !!signal, used: true }); } catch {}
+        try {
+          bgLog(`Gemini response received from ${model} (attempt ${attemptNumber}/${retries})`, {
+            endpoint: `.../models/${model}:generateContent`,
+            hadSignal: !!signal,
+            normalized: normalize,
+          });
+        } catch {}
 
         return normalize ? normalizeForRenderer(text) : text;
 
@@ -520,7 +534,13 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
         lastErr = err;
 
-        if (err instanceof RetriableError) { await new Promise(r => setTimeout(r, delayMs)); continue; }
+        if (err instanceof RetriableError) {
+          bgWarn(`Gemini model ${model} temporarily unavailable on attempt ${attemptNumber}: ${err.message || err}`);
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+
+        bgError(`Gemini model ${model} failed on attempt ${attemptNumber}:`, err);
 
         throw err;
 
@@ -530,6 +550,7 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
 
   }
 
+  bgError(`Gemini request failed after ${retries} attempts`, lastErr);
   throw lastErr;
 
 }
@@ -544,17 +565,17 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-    console.log('[BiasNeutralizer Background] Side panel behavior configured on install');
+    bgLog('Side panel behavior configured on install');
 
   } catch (error) {
 
-    console.error('[BiasNeutralizer Background] Failed to set panel behavior:', error);
+    bgError('Failed to set panel behavior:', error);
 
   }
 
   if (details.reason === 'install') {
 
-    console.log('[BiasNeutralizer] Extension installed, initializing first-time setup');
+    bgLog('Extension installed, initializing first-time setup');
 
     // Set hasCompletedSetup to false on first install
 
@@ -566,13 +587,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
     }, () => {
 
-      console.log('[BiasNeutralizer] First-time setup flags initialized');
+      bgLog('First-time setup flags initialized');
 
     });
 
   } else if (details.reason === 'update') {
 
-    console.log('[BiasNeutralizer] Extension updated to version', chrome.runtime.getManifest().version);
+    bgLog('Extension updated to version', chrome.runtime.getManifest().version);
 
   }
 
@@ -598,13 +619,13 @@ chrome.action.onClicked.addListener(async (tab) => {
 
     });
 
-    console.log('[BiasNeutralizer] Setup status:', storage);
+    bgLog('Setup status:', storage);
 
     // If setup not completed, open setup page instead of side panel
 
     if (!storage.hasCompletedSetup) {
 
-      console.log('[BiasNeutralizer] Setup not completed, opening setup page');
+      bgLog('Setup not completed, opening setup page');
 
       chrome.tabs.create({ url: chrome.runtime.getURL('setup/setup.html') });
 
@@ -616,19 +637,19 @@ chrome.action.onClicked.addListener(async (tab) => {
 
     chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
 
-      console.warn('[BiasNeutralizer] Failed to open side panel:', error);
+      bgWarn('Failed to open side panel:', error);
 
     });
 
   } catch (error) {
 
-    console.error('[BiasNeutralizer] Error checking setup status:', error);
+    bgError('Error checking setup status:', error);
 
     // On error, try to open side panel anyway
 
     chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
 
-      console.warn('[BiasNeutralizer] Failed to open side panel:', err);
+      bgWarn('Failed to open side panel:', err);
 
     });
 
@@ -662,13 +683,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       .then(() => {
 
-        console.log('[BiasNeutralizer] Results page opened');
+        bgLog('Results page opened');
 
       })
 
       .catch((error) => {
 
-        console.error('[BiasNeutralizer] Failed to open results page:', error);
+        bgError('Failed to open results page:', error);
 
       });
 
@@ -680,9 +701,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleScanRequest(message, sender, sendResponse) {
 
-  console.log('[BiasNeutralizer] ===== SCAN REQUEST RECEIVED =====');
+  bgLog('Scan request received');
 
-  console.log('[BiasNeutralizer] Message:', message);
+  bgLog('Message:', message);
 
   let tabId = null; // <-- hoist so catch/finally can see it
 
@@ -702,7 +723,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
       } catch (e) {
 
-        console.warn('[BiasNeutralizer] tabs.query failed:', e);
+        bgWarn('tabs.query failed:', e);
 
       }
 
@@ -710,7 +731,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     if (!tabId) {
 
-      console.warn('[BiasNeutralizer] No tab ID available, cannot track scan');
+      bgWarn('No tab ID available, cannot track scan');
 
     }
 
@@ -726,7 +747,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     const settings = await getStorageData(['geminiApiKey', 'analysisDepth']);
 
-    console.log('[BiasNeutralizer] Settings loaded:', {
+    bgLog('Settings loaded:', {
 
       hasApiKey: !!settings.geminiApiKey,
 
@@ -740,7 +761,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     if (!apiKey) {
 
-      console.error('[BiasNeutralizer] No API key found!');
+      bgError('API key missing; aborting scan');
 
       sendResponse({
 
@@ -754,7 +775,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     }
 
-    console.log('[BiasNeutralizer] API key validated, proceeding with scan');
+    bgLog('API key validated, proceeding with scan');
 
     const articleContent = message.articleContent;
 
@@ -790,7 +811,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     const analysisDepth = settings.analysisDepth || 'quick';
 
-    console.log('[BiasNeutralizer] Starting cloud AI scan:', {
+    bgLog('Starting cloud AI scan:', {
 
       analysisDepth,
 
@@ -818,13 +839,13 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     );
 
-    console.log('[BiasNeutralizer] ===== SCAN RESULT FROM API =====');
+    bgLog('Scan result received from API');
 
-    console.log('[BiasNeutralizer] Result type:', typeof result);
+    bgLog('Result type:', typeof result);
 
-    console.log('[BiasNeutralizer] Result length:', typeof result === 'string' ? result.length : 'N/A');
+    bgLog('Result length:', typeof result === 'string' ? result.length : 'N/A');
 
-    console.log('[BiasNeutralizer] Result value:', result);
+    bgLog('Result value:', result);
 
     sendResponse({
 
@@ -834,7 +855,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     });
 
-    console.log('[BiasNeutralizer] Response sent to sidepanel');
+    bgLog('Response sent to sidepanel');
 
     // Send highlighting data to content script for both biased and neutral phrases
 
@@ -856,7 +877,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
         });
 
-        console.log('[BiasNeutralizer] Highlight data sent to content script:', {
+        bgLog('Highlight data sent to content script:', {
 
           biasedCount: result.languageAnalysis?.length || 0,
 
@@ -866,7 +887,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
       } catch (error) {
 
-        console.warn('[BiasNeutralizer] Failed to send highlight data:', error);
+        bgWarn('Failed to send highlight data:', error);
 
       }
 
@@ -874,7 +895,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
   } catch (error) {
 
-    console.error('[BiasNeutralizer] Scan failed:', error);
+    bgError('Scan failed:', error);
 
     let errorMessage = 'Analysis failed. Please try again.';
 
@@ -900,7 +921,7 @@ async function handleScanRequest(message, sender, sendResponse) {
 
 function handleCancelScan(sender) {
 
-  console.log('[BiasNeutralizer] Cancelling active scan');
+  bgLog('Cancelling active scan');
 
   const tabId = sender?.tab?.id;
 
@@ -1058,7 +1079,7 @@ function safeJSON(input, fallback = null) {
 
     if (s.includes('"charges"') || s.includes('"rebuttals"') || s.includes('"verified_facts"')) {
 
-      console.log('[BiasNeutralizer] Attempting to repair truncated tribunal JSON...');
+      bgLog('Attempting to repair truncated tribunal JSON...');
 
       try {
 
@@ -1096,13 +1117,13 @@ function safeJSON(input, fallback = null) {
 
         const parsed = JSON.parse(repaired);
 
-        console.log('[BiasNeutralizer] Tribunal JSON successfully repaired');
+        bgLog('Tribunal JSON successfully repaired');
 
         return parsed;
 
       } catch (repairError) {
 
-        console.warn('[BiasNeutralizer] Tribunal JSON repair failed, using safe fallback');
+        bgWarn('Tribunal JSON repair failed, using safe fallback');
 
         // Continue to return fallback below
 
@@ -1113,11 +1134,11 @@ function safeJSON(input, fallback = null) {
 
     // Log the problematic input for debugging
 
-    console.warn('[BiasNeutralizer] JSON parse failed, using fallback. First 500 chars:', s.slice(0, 500));
+    bgWarn('JSON parse failed, using fallback. First 500 chars:', s.slice(0, 500));
 
   } catch (err) {
 
-    console.error('[BiasNeutralizer] JSON parse exception:', err.message);
+    bgError('JSON parse exception:', err.message);
 
   }
 
@@ -1150,14 +1171,14 @@ async function ensureBalancedExamples(elements, sourceText, requestSnippet) {
           example = candidate.trim();
         }
       } catch (error) {
-        console.warn('[BiasNeutralizer] Failed to fetch balanced snippet:', error);
+        bgWarn('Failed to fetch balanced snippet:', error);
       }
     }
 
     if (isValidBalancedExcerpt(example)) {
       resolved.push({ ...element, example });
     } else {
-      console.warn('[BiasNeutralizer] Dropping balanced element without valid excerpt:', element);
+      bgWarn('Dropping balanced element without valid excerpt:', element);
     }
   }
 
@@ -1183,11 +1204,11 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   }
 
-  console.log('[BiasNeutralizer] Using thinking budget:', thinkingBudget);
+  bgLog('Using thinking budget:', thinkingBudget);
 
   const textToAnalyze = articleText.slice(0, 500000);
 
-  console.log('[BiasNeutralizer] Agent 1: Context analysis...');
+  bgLog('Agent 1: Context analysis...');
 
   /*
 
@@ -1219,7 +1240,7 @@ Rules:
 
 - Estimate quoted material: count approximate word percentage inside quotation marks
 
-  â€¢ Low = 0-30%, Medium = 31-60%, High = 61-100%
+  • Low = 0-30%, Medium = 31-60%, High = 61-100%
 
 Output ONLY this JSON (no other text):
 
@@ -1253,7 +1274,7 @@ ARTICLE TEXT:
 
   const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'context' });
 
-  console.log('[BiasNeutralizer] Context analysis complete');
+  bgLog('Context analysis complete');
 
   const contextJson = safeJSON(contextResponse, { type: 'Unknown', summary: '', tone: 'Neutral', quote_ratio: 'Unknown', quote_percentage: 0, confidence: 'High' });
 
@@ -1269,9 +1290,9 @@ ARTICLE TEXT:
 
   const contextData = `${articleType} article. ${summary}. Tone: ${tone}. Quote ratio: ${quoteRatio} (${quotePct}%).`;
 
-  console.log('[BiasNeutralizer] Context:', contextData);
+  bgLog('Context:', contextData);
 
-  console.log('[BiasNeutralizer] Agents 2-4: Language, Bias, and Skeptic analysis...');
+  bgLog('Agents 2-4: Language, Bias, and Skeptic analysis...');
 
   /*
 
@@ -1355,7 +1376,7 @@ Flag ONLY if falsifiable criteria met:
 
 Thresholds:
 
-- Need â‰¥2 INDEPENDENT indicators (different types/sources) OR
+- Need ≥2 INDEPENDENT indicators (different types/sources) OR
 
 - 1 High-strength indicator corroborated by story structure (headline/lead/positioning)
 
@@ -1523,13 +1544,13 @@ ${textToAnalyze}`;
 
   if (analysisDepth === 'deep') {
 
-    console.log('[BiasNeutralizer] Deep mode: Activating specialized agents');
+    bgLog('Deep mode: Activating specialized agents');
 
     /*
 
     sourceDiversityPrompt = `Context: ${contextData}
 
-Analyze who gets to speak. Account for story contextâ€”not all stories need partisan balance.
+Analyze who gets to speak. Account for story context—not all stories need partisan balance.
 
 Context rule: If topic is non-adversarial (e.g., natural disaster, science consensus), political balance may be "Not Applicable"
 
@@ -1748,7 +1769,7 @@ TEXT:
 
   if (analysisDepth === 'deep') {
 
-    console.log('[BiasNeutralizer] Executing deep analysis agents...');
+    bgLog('Executing deep analysis agents...');
 
     [sourceDiversityResponse, framingResponse, omissionResponse] = await Promise.all([
 
@@ -1760,19 +1781,19 @@ TEXT:
 
     ]);
 
-    console.log('[BiasNeutralizer] Deep analysis agents complete');
+    bgLog('Deep analysis agents complete');
 
   }
 
-  console.log('[BiasNeutralizer] Phase 1: Initial Evidence Gathering complete');
+  bgLog('Phase 1: Initial Evidence Gathering complete');
 
   // ==================== PHASE 2: CROSS-EXAMINATION & CHALLENGE ====================
 
-  console.log('[BiasNeutralizer] Phase 2: Tribunal Cross-Examination starting...');
+  bgLog('Phase 2: Tribunal Cross-Examination starting...');
 
   // Agent 1: Prosecutor - Build the case for bias
 
-  console.log('[BiasNeutralizer] Agent 5: Prosecutor building case...');
+  bgLog('Agent 5: Prosecutor building case...');
 
   const prosecutorPrompt = AgentPrompts.createProsecutorPrompt(
 
@@ -1792,11 +1813,11 @@ TEXT:
 
   const prosecutorJSON = safeJSON(prosecutorResponse, { charges: [], prosecution_summary: 'No charges filed.', confidence: 'High' });
 
-  console.log('[BiasNeutralizer] Prosecutor complete. Charges filed:', prosecutorJSON.charges?.length || 0);
+  bgLog('Prosecutor complete. Charges filed:', prosecutorJSON.charges?.length || 0);
 
   // Agent 2 & 3: Defense and Investigator run in parallel
 
-  console.log('[BiasNeutralizer] Agents 6-7: Defense and Investigator running in parallel...');
+  bgLog('Agents 6-7: Defense and Investigator running in parallel...');
 
   const defensePrompt = AgentPrompts.createDefensePrompt(
 
@@ -1834,15 +1855,15 @@ TEXT:
 
   const investigatorJSON = safeJSON(investigatorResponse, { verified_facts: [], investigator_summary: 'No structural claims to investigate.', overall_confidence: 'High' });
 
-  console.log('[BiasNeutralizer] Defense complete. Rebuttals filed:', defenseJSON.rebuttals?.length || 0);
+  bgLog('Defense complete. Rebuttals filed:', defenseJSON.rebuttals?.length || 0);
 
-  console.log('[BiasNeutralizer] Investigator complete. Facts verified:', investigatorJSON.verified_facts?.length || 0);
+  bgLog('Investigator complete. Facts verified:', investigatorJSON.verified_facts?.length || 0);
 
-  console.log('[BiasNeutralizer] Phase 2: Cross-Examination complete');
+  bgLog('Phase 2: Cross-Examination complete');
 
   // ==================== PHASE 3: JUDICIAL SYNTHESIS ====================
 
-  console.log('[BiasNeutralizer] Phase 3: Judge rendering final verdict...');
+  bgLog('Phase 3: Judge rendering final verdict...');
 
   // Agent 8: Judge - Final adjudication using tribunal debate
 
@@ -1860,27 +1881,27 @@ TEXT:
 
   const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'judge' });
 
-  console.log('[BiasNeutralizer] ===== JUDGE RESPONSE =====');
+  bgLog('Judge response received');
 
-  console.log('[BiasNeutralizer] Judge response type:', typeof judgeResponse);
+  bgLog('Judge response type:', typeof judgeResponse);
 
-  console.log('[BiasNeutralizer] Judge response length:', typeof judgeResponse === 'string' ? judgeResponse.length : 'N/A');
+  bgLog('Judge response length:', typeof judgeResponse === 'string' ? judgeResponse.length : 'N/A');
 
-  console.log('[BiasNeutralizer] Judge response:', judgeResponse);
+  bgLog('Judge response:', judgeResponse);
 
-  console.log('[BiasNeutralizer] Phase 3: Judicial Synthesis complete');
+  bgLog('Phase 3: Judicial Synthesis complete');
 
-  console.log('[BiasNeutralizer] Adversarial Tribunal Analysis complete');
+  bgLog('Adversarial Tribunal Analysis complete');
 
   // CRITICAL: Extract rating and confidence from RAW Judge response BEFORE normalization
   // This prevents normalizeForRenderer's strict validation from replacing valid values with defaults
-  console.log("BG_DEBUG: Raw judgeResponse BEFORE extraction:", judgeResponse);
+  bgLog('Debug: Raw judgeResponse before extraction:', judgeResponse);
 
   const correctRating = extractRating(judgeResponse);
 
   const correctConfidence = extractConfidence(judgeResponse);
 
-  console.log('[BiasNeutralizer] Extracted from raw Judge response:', { correctRating, correctConfidence });
+  bgLog('Extracted from raw Judge response:', { correctRating, correctConfidence });
 
   // NOW normalize the text for display (after extraction)
 
@@ -1928,13 +1949,13 @@ ALGORITHM (apply in order):
 
 1) Read CONTEXT.type and CONTEXT.is_opinion_or_analysis.
 
-   - If Opinion or Analysis â†’ Output: 
+   - If Opinion or Analysis → Output: 
 
      Rating: Unclear
 
      Confidence: High
 
-     And a single line note: "Opinion content â€” not evaluated for news bias."
+     And a single line note: "Opinion content — not evaluated for news bias."
 
      Then include BALANCED ELEMENTS (if any) and METHODOLOGY NOTE.
 
@@ -1946,15 +1967,15 @@ ALGORITHM (apply in order):
 
        High = 2 points, Medium = 1 point, Low = 0.5 points (cap Low at 1 total).
 
-     Require total â‰¥2 AND at least 2 independent indicators (different types/examples) to move off Center.
+     Require total ≥2 AND at least 2 independent indicators (different types/examples) to move off Center.
 
    - Quote weighting: if QUOTES_JSON.total_quotes > 0 and
 
-       (QUOTES_JSON.quotes_with_loaded_terms / QUOTES_JSON.total_quotes) â‰¥ 0.7,
+       (QUOTES_JSON.quotes_with_loaded_terms / QUOTES_JSON.total_quotes) ≥ 0.7,
 
        treat loaded language primarily as source bias; increase neutrality (gravitate toward Center).
 
-   - Skeptic override: if SKEPTIC_JSON.balance_score â‰¥ 8 AND SKEPTIC_JSON.confidence === "High" â†’ FORCE Rating: Center.
+   - Skeptic override: if SKEPTIC_JSON.balance_score ≥ 8 AND SKEPTIC_JSON.confidence === "High" → FORCE Rating: Center.
 
    - Map result to allowed ratings ONLY: Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear.
 
@@ -1974,7 +1995,7 @@ KEY FINDINGS
 
 LOADED LANGUAGE EXAMPLES
 
-- Provide 2-5 items. Each item: "<phrase>" â€” short reason, neutral alternative.
+- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
 
 - If language is neutral, write: "No material loaded wording in narrative."
 
@@ -2052,15 +2073,15 @@ CRITICAL RULES:
 
   const moderatorResponse = await callGemini(apiKey, moderatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
 
-  console.log('[BiasNeutralizer] ===== MODERATOR RESPONSE =====');
+  bgLog('Moderator response received');
 
-  console.log('[BiasNeutralizer] Moderator response type:', typeof moderatorResponse);
+  bgLog('Moderator response type:', typeof moderatorResponse);
 
-  console.log('[BiasNeutralizer] Moderator response length:', typeof moderatorResponse === 'string' ? moderatorResponse.length : 'N/A');
+  bgLog('Moderator response length:', typeof moderatorResponse === 'string' ? moderatorResponse.length : 'N/A');
 
-  console.log('[BiasNeutralizer] Moderator response:', moderatorResponse);
+  bgLog('Moderator response:', moderatorResponse);
 
-  console.log('[BiasNeutralizer] Multi-agent scan complete');
+  bgLog('Multi-agent scan complete');
 
   return {
 
@@ -2109,5 +2130,6 @@ function getStorageData(keys) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { extractRating, extractConfidence };
 }
+
 
 

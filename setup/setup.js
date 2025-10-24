@@ -3,10 +3,15 @@
  * Handles on-device AI model download and cloud setup
  */
 
-console.log('[BiasNeutralizer Setup] Initializing setup page...');
+
+const SETUP_LOG_PREFIX = '[Setup]';
+const setupLog = (...args) => console.log(SETUP_LOG_PREFIX, ...args);
+const setupWarn = (...args) => console.warn(SETUP_LOG_PREFIX, ...args);
+const setupError = (...args) => console.error(SETUP_LOG_PREFIX, ...args);
 
 document.addEventListener('DOMContentLoaded', async () => {
   // ========================================
+  setupLog('Initializing setup page...');
   // DOM ELEMENTS
   // ========================================
   const elements = {
@@ -24,21 +29,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     deviceRequirements: document.getElementById('device-requirements'),
     notificationToast: document.getElementById('notification-toast'),
     flagsStep: document.getElementById('flags-step'),
-    copyFlagsUrlButton: document.getElementById('copy-flags-url'),
-    flagCopyButtons: Array.from(document.querySelectorAll('.flag-copy-btn')),
+    openFlagsButton: document.getElementById('open-flags-button'),
     flagsEnabledButton: document.getElementById('flags-enabled-button'),
     flagsStatusMessage: document.getElementById('flags-status-message'),
+  };
+
+  const optionalElements = {
     flagsComplete: document.getElementById('flags-complete'),
-    flagsContinueButton: document.getElementById('flags-continue-button'),
   };
 
   // Validate all required elements exist
   for (const [key, element] of Object.entries(elements)) {
     if (!element) {
-      console.error(`[BiasNeutralizer Setup] Critical UI element missing: "${key}"`);
+      setupError(`Critical UI element missing: "${key}"`);
       return;
     }
   }
+
+  Object.assign(elements, optionalElements);
 
   // ========================================
   // STATE MANAGEMENT
@@ -113,14 +121,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         chrome.storage.local.set(data, () => {
           if (chrome.runtime.lastError) {
-            console.error('[BiasNeutralizer Setup] Storage error:', chrome.runtime.lastError);
+            setupError('Storage error:', chrome.runtime.lastError);
             resolve(false);
           } else {
             resolve(true);
           }
         });
       } catch (error) {
-        console.error('[BiasNeutralizer Setup] Storage exception:', error);
+        setupError('Storage exception:', error);
         resolve(false);
       }
     });
@@ -134,14 +142,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         chrome.storage.local.get(keys, (result) => {
           if (chrome.runtime.lastError) {
-            console.error('[BiasNeutralizer Setup] Storage error:', chrome.runtime.lastError);
+            setupError('Storage error:', chrome.runtime.lastError);
             resolve(null);
           } else {
             resolve(result);
           }
         });
       } catch (error) {
-        console.error('[BiasNeutralizer Setup] Storage exception:', error);
+        setupError('Storage exception:', error);
         resolve(null);
       }
     });
@@ -151,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Navigates to sidepanel after successful setup
    */
   function navigateToSidePanel() {
-    console.log('[BiasNeutralizer Setup] Navigating to sidepanel...');
+    setupLog('Navigating to sidepanel...');
     setTimeout(() => {
       window.location.href = chrome.runtime.getURL('sidepanel/sidepanel.html');
     }, 1500);
@@ -161,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Completes setup with the selected preference
    */
   async function completeSetup(preference) {
-    console.log(`[BiasNeutralizer Setup] Completing setup with preference: ${preference}`);
+    setupLog(`Completing setup with preference: ${preference}`);
     
     const success = await safeStorageSet({
       hasCompletedSetup: true,
@@ -174,7 +182,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return false;
     }
 
-    console.log('[BiasNeutralizer Setup] Setup completed successfully');
+    setupLog('Setup completed successfully');
     return true;
   }
 
@@ -186,13 +194,13 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Step 3A: Feature Detection - Check if LanguageModel API is available
    */
   async function checkFeatureAvailability() {
-    console.log('[BiasNeutralizer Setup] Checking feature availability...');
+    setupLog('Checking feature availability...');
     
     updateStatus('Checking device compatibility...', 'info');
 
     // Check if LanguageModel API exists
     if (!('LanguageModel' in window)) {
-      console.warn('[BiasNeutralizer Setup] LanguageModel API not available');
+      setupWarn('LanguageModel API not available');
       return {
         available: false,
         reason: 'not-supported',
@@ -202,10 +210,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       // Step 3B: Check Model Availability
-      console.log('[BiasNeutralizer Setup] Checking model availability...');
+      setupLog('Checking model availability...');
       
       const availability = await window.LanguageModel.availability();
-      console.log('[BiasNeutralizer Setup] Model availability status:', availability);
+      setupLog('Model availability status:', availability);
 
       if (availability === 'available') {
         return {
@@ -233,7 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       }
     } catch (error) {
-      console.error('[BiasNeutralizer Setup] Feature detection error:', error);
+      setupError('Feature detection error:', error);
       return {
         available: false,
         reason: 'error',
@@ -279,11 +287,11 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   async function handleDownloadModel() {
     if (state.isDownloading) {
-      console.warn('[BiasNeutralizer Setup] Download already in progress');
+      setupWarn('Download already in progress');
       return;
     }
 
-    console.log('[BiasNeutralizer Setup] Starting model download...');
+    setupLog('Starting model download...');
     state.isDownloading = true;
     state.downloadCancelled = false;
 
@@ -292,18 +300,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.downloadButton.classList.add('loading');
     elements.downloadButtonText.textContent = 'Downloading...';
     elements.cancelDownloadButton.style.display = 'block'; // Show cancel button
+    elements.progressContainer.classList.remove('progress-indeterminate');
     updateStatus('Downloading model... This may take a few minutes.', 'info');
     updateProgress(0);
 
     try {
       // Create session with progress monitoring
-      console.log('[BiasNeutralizer Setup] Creating LanguageModel session...');
+      setupLog('Creating LanguageModel session...');
+      let isFinalizing = false;
       
       const session = await window.LanguageModel.create({
         monitor(m) {
           m.addEventListener('downloadprogress', (e) => {
+            if (e.loaded === 1) {
+              if (!isFinalizing) {
+                setupLog('Download reached 100%, finalizing...');
+              }
+              isFinalizing = true;
+              updateStatus('Finalizing model (extracting & loading)...', 'info');
+              elements.progressContainer.classList.add('progress-indeterminate');
+              elements.progressText.textContent = 'Finalizing...';
+              return;
+            }
+
             const percent = Math.round(e.loaded * 100);
-            console.log(`[BiasNeutralizer Setup] Download progress: ${percent}%`);
+            setupLog(`Download progress: ${percent}%`);
             updateProgress(percent);
             updateStatus(`Downloading model... ${percent}% complete`, 'info');
           });
@@ -311,15 +332,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       state.currentSession = session;
-      console.log('[BiasNeutralizer Setup] Model download complete!');
+      setupLog('Model download complete!');
 
       // Check if download was cancelled
       if (state.downloadCancelled) {
-        console.log('[BiasNeutralizer Setup] Download cancelled by user');
+        setupLog('Download cancelled by user');
         try {
           await session.destroy();
         } catch (error) {
-          console.warn('[BiasNeutralizer Setup] Failed to destroy session:', error);
+          setupWarn('Failed to destroy session:', error);
         }
         return; // Exit early, don't complete setup
       }
@@ -327,14 +348,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Destroy the session since we only needed it for download
       try {
         await session.destroy();
-        console.log('[BiasNeutralizer Setup] Session destroyed');
+        setupLog('Session destroyed');
       } catch (error) {
-        console.warn('[BiasNeutralizer Setup] Failed to destroy session:', error);
+        setupWarn('Failed to destroy session:', error);
       }
+      state.currentSession = null;
+      state.isDownloading = false;
 
       // Update UI
       updateStatus('Model downloaded successfully!', 'success');
-      updateProgress(100);
+      elements.progressContainer.classList.remove('progress-indeterminate');
+      elements.progressContainer.style.display = 'none';
       elements.cancelDownloadButton.style.display = 'none'; // Hide cancel button
       showNotification('On-device model ready!', 'success');
 
@@ -344,7 +368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         navigateToSidePanel();
       }
     } catch (error) {
-      console.error('[BiasNeutralizer Setup] Download failed:', error);
+      setupError('Download failed:', error);
       
       // Reset state
       state.isDownloading = false;
@@ -355,6 +379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       elements.downloadButton.classList.remove('loading');
       elements.downloadButtonText.textContent = 'Retry Download';
       elements.cancelDownloadButton.style.display = 'none'; // Hide cancel button
+      elements.progressContainer.classList.remove('progress-indeterminate');
       hideProgress();
       
       // Show error
@@ -376,7 +401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Step 3D: Skip Button Handler - Use cloud models
    */
   async function handleSkipToCloud() {
-    console.log('[BiasNeutralizer Setup] User chose to skip on-device setup');
+    setupLog('User chose to skip on-device setup');
     
     elements.skipCloudButton.disabled = true;
     elements.skipCloudButton.textContent = 'Setting up...';
@@ -400,7 +425,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Handles cancellation of download in progress
    */
   async function handleCancelDownload() {
-    console.log('[BiasNeutralizer Setup] User cancelled download');
+    setupLog('User cancelled download');
     
     state.downloadCancelled = true;
     state.isDownloading = false;
@@ -409,9 +434,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.currentSession) {
       try {
         await state.currentSession.destroy();
-        console.log('[BiasNeutralizer Setup] Session destroyed after cancellation');
+        setupLog('Session destroyed after cancellation');
       } catch (error) {
-        console.warn('[BiasNeutralizer Setup] Failed to destroy session:', error);
+        setupWarn('Failed to destroy session:', error);
       }
       state.currentSession = null;
     }
@@ -421,6 +446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.downloadButton.classList.remove('loading');
     elements.downloadButtonText.textContent = 'Download Model';
     elements.cancelDownloadButton.style.display = 'none';
+    elements.progressContainer.classList.remove('progress-indeterminate');
     hideProgress();
     updateStatus('Download cancelled. You can try again or use cloud models.', 'warning');
     
@@ -435,51 +461,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.cancelDownloadButton.addEventListener('click', handleCancelDownload);
   elements.skipCloudButton.addEventListener('click', handleSkipToCloud);
 
-  async function copyToClipboard(text, successMessage = 'Copied to clipboard') {
-    if (!navigator?.clipboard?.writeText) {
-      showNotification('Clipboard not available. Please copy manually.', 'warning');
-      return false;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      showNotification(successMessage, 'success');
-      return true;
-    } catch (error) {
-      console.warn('[BiasNeutralizer Setup] clipboard write failed:', error);
-      showNotification('Failed to copy to clipboard. Please copy manually.', 'error');
-      return false;
-    }
-  }
-
-  if (elements.copyFlagsUrlButton) {
-    elements.copyFlagsUrlButton.addEventListener('click', () => {
-      copyToClipboard('chrome://flags', 'chrome://flags copied. Paste into Chrome to open the flags page.');
-    });
-  }
-
-  if (elements.flagCopyButtons?.length) {
-    elements.flagCopyButtons.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const flagName = btn.dataset.flagName;
-        copyToClipboard(flagName, `Copied "${flagName}". Paste into the Chrome flags search box.`);
-      });
-    });
-  }
-
-  if (elements.flagsContinueButton) {
-    elements.flagsContinueButton.addEventListener('click', async () => {
-      elements.flagsContinueButton.disabled = true;
-      elements.flagsContinueButton.classList.add('loading');
-      updateStatus('Completing setup...', 'info');
-      const success = await completeSetup('on-device');
-      if (success) {
-        showNotification('Setup complete! Redirecting...', 'success');
-        navigateToSidePanel();
-      } else {
-        elements.flagsContinueButton.disabled = false;
-        elements.flagsContinueButton.classList.remove('loading');
-        updateStatus('Failed to complete setup. Please try again.', 'error');
-      }
+  if (elements.openFlagsButton) {
+    elements.openFlagsButton.addEventListener('click', () => {
+      chrome.tabs.create({ url: 'chrome://flags' });
     });
   }
 
@@ -522,12 +506,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
-    console.log('[BiasNeutralizer Setup] Page unloading, cleaning up...');
+    setupLog('Page unloading, cleaning up...');
     
     // If download is in progress, mark it for recovery
     if (state && state.isDownloading) {
       chrome.storage.local.set({ downloadInProgress: true }, () => {
-        console.log('[BiasNeutralizer Setup] Download state saved for recovery');
+        setupLog('Download state saved for recovery');
       });
     }
     
@@ -536,7 +520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         state.currentSession.destroy();
       } catch (error) {
-        console.error('[BiasNeutralizer Setup] Cleanup error:', error);
+        setupError('Cleanup error:', error);
       }
     }
   });
@@ -545,12 +529,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // INITIALIZATION
   // ========================================
 
-  console.log('[BiasNeutralizer Setup] Running initial feature detection...');
+  setupLog('Running initial feature detection...');
   
   // Check if setup was already completed (in case user navigated back)
   const storage = await safeStorageGet(['hasCompletedSetup', 'aiPreference']);
   if (storage && storage.hasCompletedSetup) {
-    console.log('[BiasNeutralizer Setup] Setup already completed, redirecting...');
+    setupLog('Setup already completed, redirecting...');
     showNotification('Setup already completed!', 'success');
     navigateToSidePanel();
     return;
@@ -559,7 +543,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check for incomplete download (Edge Case A: User closed tab during download)
   const downloadState = await safeStorageGet(['downloadInProgress']);
   if (downloadState && downloadState.downloadInProgress) {
-    console.log('[BiasNeutralizer Setup] Found incomplete download, clearing state...');
+    setupLog('Found incomplete download, clearing state...');
     await safeStorageSet({ downloadInProgress: false });
     updateStatus('Previous download was interrupted. Please try again.', 'warning');
   }
@@ -593,5 +577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.flagsEnabledButton.disabled = false;
   elements.flagsEnabledButton.classList.remove('loading');
 
-  console.log('[BiasNeutralizer Setup] Setup page ready');
+  setupLog('Setup page ready');
 });
+
+
