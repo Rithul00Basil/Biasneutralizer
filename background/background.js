@@ -129,18 +129,33 @@ function normalizeForRenderer(text, contextJSON = null) {
 // Helper extractors
 
 function extractRating(text) {
-  // Strategy 1: Try regex match for plain text "Rating: [value]" format
-  const match = text.match(/Rating:\s*([^\n]+)/i);
-  if (match && match[1].trim()) {
-    const result = match[1].trim();
-    console.log('[BiasNeutralizer] extractRating: Success via regex ->', result);
+  // Strategy 1: Prefer markdown header format emitted by Judge agent
+  const ratingHeaderPatterns = [
+    /Overall Bias Assessment:\s*\*\*(.*?)\*\*/i, // e.g., "Overall Bias Assessment: **Center**"
+    /\*\*Overall Bias Assessment:\*\*\s*([^\n]+)/i // e.g., "### Findings - **Overall Bias Assessment:** Center"
+  ];
+
+  for (const pattern of ratingHeaderPatterns) {
+    const markdownMatch = text.match(pattern);
+    if (markdownMatch && markdownMatch[1] && markdownMatch[1].trim()) {
+      const result = markdownMatch[1].trim();
+      console.log('[BiasNeutralizer] extractRating: Success via markdown header ->', result);
+      return result;
+    }
+  }
+
+  // Strategy 2: Try regex match for plain text "Rating: [value]" format (legacy)
+  const simpleMatch = text.match(/Rating:\s*([^\n]+)/i);
+  if (simpleMatch && simpleMatch[1].trim()) {
+    const result = simpleMatch[1].trim();
+    console.log('[BiasNeutralizer] extractRating: Success via simple regex ->', result);
     return result;
   }
 
-  // Strategy 2: Try JSON parsing fallback for structured responses
-  console.log('[BiasNeutralizer] extractRating: Regex failed, attempting JSON parsing...');
+  // Strategy 3: Try JSON parsing fallback for structured responses
+  console.log('[BiasNeutralizer] extractRating: Markdown and regex failed, attempting JSON parsing...');
   const parsedJson = safeJSON(text, null);
-  
+
   if (parsedJson && typeof parsedJson === 'object') {
     // Check common JSON paths in order of likelihood
     const jsonPaths = [
@@ -161,24 +176,39 @@ function extractRating(text) {
     console.log('[BiasNeutralizer] extractRating: JSON parsing failed or returned non-object');
   }
 
-  // Strategy 3: Fallback to default
+  // Strategy 4: Fallback to default
   console.log('[BiasNeutralizer] extractRating: Falling back to default "Unclear"');
   return 'Unclear';
 }
 
 function extractConfidence(text) {
-  // Strategy 1: Try regex match for plain text "Confidence: [value]" format
-  const match = text.match(/Confidence:\s*([^\n]+)/i);
-  if (match && match[1].trim()) {
-    const result = match[1].trim();
-    console.log('[BiasNeutralizer] extractConfidence: Success via regex ->', result);
+  // Strategy 1: Prefer markdown header format emitted by Judge agent
+  const confidenceHeaderPatterns = [
+    /Confidence:\s*\*\*(.*?)\*\*/i, // e.g., "Confidence: **High**"
+    /\*\*Confidence:\*\*\s*([^\n]+)/i // e.g., "### Findings - **Confidence:** High"
+  ];
+
+  for (const pattern of confidenceHeaderPatterns) {
+    const markdownMatch = text.match(pattern);
+    if (markdownMatch && markdownMatch[1] && markdownMatch[1].trim()) {
+      const result = markdownMatch[1].trim();
+      console.log('[BiasNeutralizer] extractConfidence: Success via markdown header ->', result);
+      return result;
+    }
+  }
+
+  // Strategy 2: Try regex match for plain text "Confidence: [value]" format (legacy)
+  const simpleMatch = text.match(/Confidence:\s*([^\n]+)/i);
+  if (simpleMatch && simpleMatch[1].trim()) {
+    const result = simpleMatch[1].trim();
+    console.log('[BiasNeutralizer] extractConfidence: Success via simple regex ->', result);
     return result;
   }
 
-  // Strategy 2: Try JSON parsing fallback for structured responses
+  // Strategy 3: Try JSON parsing fallback for structured responses
   console.log('[BiasNeutralizer] extractConfidence: Regex failed, attempting JSON parsing...');
   const parsedJson = safeJSON(text, null);
-  
+
   if (parsedJson && typeof parsedJson === 'object') {
     // Check common JSON paths in order of likelihood
     const jsonPaths = [
@@ -201,7 +231,7 @@ function extractConfidence(text) {
     console.log('[BiasNeutralizer] extractConfidence: JSON parsing failed or returned non-object');
   }
 
-  // Strategy 3: Fallback to default
+  // Strategy 4: Fallback to default
   console.log('[BiasNeutralizer] extractConfidence: Falling back to default "Medium"');
   return 'Medium';
 }
