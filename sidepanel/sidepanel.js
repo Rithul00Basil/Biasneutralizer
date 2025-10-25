@@ -740,7 +740,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     animationContainer: document.querySelector('#animation-container'),
     detectionHelper: document.querySelector('.detection-helper'),
     privateToggle: document.querySelector('#private-toggle'),
-    realtimeToggle: document.querySelector('#realtime-toggle'),
     scanButton: document.querySelector('.cta-button'),
     cancelScanButton: document.querySelector('#cancel-scan-button'),
     statusText: document.querySelector('#scan-status-text'),
@@ -1904,16 +1903,12 @@ ${contentType} content is evaluated differently than news reporting and does not
     spLog('Initializing panel state');
 
     // Load settings
-    const settings = await safeStorageGet(['privateMode', 'realtimeMode']);
+    const settings = await safeStorageGet(['privateMode']);
     
     if (settings) {
       if (settings.privateMode) {
         elements.privateToggle.classList.add('on');
         spLog('Private mode enabled');
-      }
-      if (settings.realtimeMode) {
-        elements.realtimeToggle.classList.add('on');
-        spLog('Realtime mode enabled');
       }
     }
 
@@ -1971,13 +1966,6 @@ ${contentType} content is evaluated differently than news reporting and does not
       if (target.closest('#private-toggle')) {
         event.preventDefault();
         handleToggleClick(elements.privateToggle, 'privateMode');
-        return;
-      }
-
-      // Realtime mode toggle
-      if (target.closest('#realtime-toggle')) {
-        event.preventDefault();
-        handleToggleClick(elements.realtimeToggle, 'realtimeMode');
         return;
       }
 

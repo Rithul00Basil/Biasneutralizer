@@ -1,3 +1,5 @@
+import { initMarkdownRenderer, renderMarkdownToElement } from './markdown-renderer.js';
+
 (() => {
   'use strict';
 
@@ -170,63 +172,9 @@
 
   // ========================================
   // ENHANCED MARKDOWN RENDERING WITH LATEX
+  // Note: Main rendering now handled by markdown-renderer.js
+  // This section kept for backward compatibility
   // ========================================
-  function enhancedMarkdownToHtml(text) {
-    if (!text) return '';
-
-    let html = text
-      // Escape HTML entities first
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // Code blocks (must be before inline code)
-    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const language = lang || '';
-      return `<pre><code class="language-${language}">${code.trim()}</code></pre>`;
-    });
-
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // Headers (h1-h3)
-    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-    // Blockquotes
-    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-    // Horizontal rules
-    html = html.replace(/^---$/gm, '<hr/>');
-    html = html.replace(/^\*\*\*$/gm, '<hr/>');
-
-    // Bold and italic (must be before lists to avoid conflicts)
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-    html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-
-    // Unordered lists
-    html = html.replace(/^[-•*] (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-    html = html.replace(/<\/ul>\s*<ul>/g, ''); // Merge consecutive lists
-
-    // Numbered lists
-    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-    // Line breaks
-    html = html.replace(/\n\n/g, '</p><p>');
-    html = html.replace(/^([^<])/gm, '<p>$1');
-    html = html.replace(/([^>])$/gm, '$1</p>');
-
-    // Clean up malformed paragraphs
-    html = html.replace(/<p>\s*<\/p>/g, '');
-    html = html.replace(/<p>(<[hulo])/g, '$1');
-    html = html.replace(/(<\/[hulo][^>]*>)<\/p>/g, '$1');
-
-    return html;
-  }
 
   function renderLatexInElement(element) {
     // Use KaTeX to render LaTeX in the element
@@ -340,6 +288,14 @@
     setupStorageListener();
     await refreshResults();
     initScrollAnimations();
+    
+    // Initialize markdown renderer after page is loaded (non-blocking)
+    // This ensures CDN libraries have time to load
+    setTimeout(() => {
+      initMarkdownRenderer().catch(err => {
+        resultsWarn('Markdown renderer initialization failed:', err);
+      });
+    }, 100);
   }
 
   if (document.readyState === 'loading') {
@@ -1403,10 +1359,14 @@
     const typingIndicator = addMessageToChat('assistant typing-indicator', '<span></span><span></span><span></span>');
 
     try {
+      resultsLog('handleAssistantSubmit called with input:', userInput);
+      // Always use cloud-based Gemini API
       await streamAssistantResponse(userInput, typingIndicator);
     } catch (error) {
       resultsError("Assistant Error:", error);
-      typingIndicator.textContent = "Sorry, I encountered an error. Please try again.";
+      typingIndicator.classList.remove('typing-indicator');
+      typingIndicator.textContent = `❌ Sorry, I encountered an error: ${error.message}`;
+      typingIndicator.classList.add('assistant-error');
     } finally {
       els.assistantInput.disabled = false;
       els.assistantInput.focus();
@@ -1461,18 +1421,8 @@
       for await (const chunk of stream) {
         fullResponseText = chunk.trim();
         
-        // Use enhanced markdown to HTML conversion
-        const dirtyHtml = enhancedMarkdownToHtml(fullResponseText);
-        messageElement.innerHTML = (window.DOMPurify
-          ? DOMPurify.sanitize(dirtyHtml, { 
-              ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br', 'h1', 'h2', 'h3', 'code', 'pre', 'blockquote', 'hr'], 
-              ALLOWED_ATTR: ['class'] 
-            })
-          : dirtyHtml
-        );
-        
-        // Render LaTeX expressions
-        renderLatexInElement(messageElement);
+        // Use new markdown renderer with GFM support
+        renderMarkdownToElement(messageElement, fullResponseText);
         
         // Auto-scroll to bottom
         els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
@@ -1496,21 +1446,51 @@
     const { lastAnalysis, geminiApiKey } = settings;
 
     if (!geminiApiKey) {
-      messageElement.textContent = "Error: Gemini API key not found in settings.";
+      messageElement.classList.remove('typing-indicator');
+      messageElement.textContent = "⚠️ Error: Gemini API key not found. Please add your API key in the extension's settings page.";
+      messageElement.classList.add('assistant-error');
+      resultsError('Gemini API key not configured');
       return;
     }
+    
+    resultsLog('Starting assistant response with cloud API...');
 
     const analysisContext = JSON.stringify(lastAnalysis, null, 2);
 
     const systemPrompt = `You are a knowledgeable AI assistant with expertise in news bias analysis, media literacy, journalism, and general topics.
+
+CRITICAL FORMATTING RULES - Format ALL responses in Markdown:
+
+TABLES (MOST IMPORTANT - Use these when comparing data):
+| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Data 1   | Data 2   | Data 3   |
+
+CODE BLOCKS - Always specify language:
+\`\`\`javascript
+const code = "example";
+\`\`\`
+
+HEADERS - Add space after #:
+# H1 Header
+## H2 Header
+### H3 Header
+
+LISTS:
+- Bullet item
+- Another item
+1. Numbered item
+2. Another numbered item
+
+TEXT FORMATTING: **bold** *italic* ~~strikethrough~~ \`inline code\`
+
+MATH: Use LaTeX - $x^2$ for inline, $$\\sum_{i=1}^n$$ for display
 
 You have access to a news bias analysis (provided below), but you can answer ANY question the user asks:
 - Questions about the analysis: Use the specific data from the context below
 - Questions about bias, journalism, media literacy: Use your expertise
 - General questions on any topic: Answer helpfully using your knowledge
 - Be conversational, helpful, and informative
-
-Format your responses using markdown (bold, italics, lists, headers, code blocks) and LaTeX for math (use $...$ for inline, $$...$$ for display).
 
 ANALYSIS CONTEXT (for reference when discussing this article):
 ${analysisContext}`;
@@ -1564,15 +1544,8 @@ ${analysisContext}`;
             if (textPart) {
               fullResponseText += textPart;
               
-              // Use enhanced markdown to HTML conversion
-              const dirtyHtml = enhancedMarkdownToHtml(fullResponseText);
-              messageElement.innerHTML = DOMPurify.sanitize(dirtyHtml, {
-                ALLOWED_TAGS: ['strong', 'em', 'ul', 'li', 'p', 'br', 'h1', 'h2', 'h3', 'code', 'pre', 'blockquote', 'hr'],
-                ALLOWED_ATTR: ['class']
-              });
-              
-              // Render LaTeX expressions
-              renderLatexInElement(messageElement);
+              // Use new markdown renderer with GFM support
+              renderMarkdownToElement(messageElement, fullResponseText);
               
               els.assistantChatWindow.scrollTop = els.assistantChatWindow.scrollHeight;
             }

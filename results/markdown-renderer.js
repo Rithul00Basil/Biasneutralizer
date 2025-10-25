@@ -6,16 +6,26 @@
 /**
  * Initialize the markdown renderer with all required libraries
  * Call this once when the page loads
+ * Returns a promise that resolves when initialization is complete
  */
-async function initMarkdownRenderer() {
+export async function initMarkdownRenderer() {
+  // Wait for libraries to load (with timeout)
+  let attempts = 0;
+  const maxAttempts = 50; // 5 seconds max wait
+  
+  while (typeof marked === 'undefined' && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    attempts++;
+  }
+  
   // Check if libraries are loaded
   if (typeof marked === 'undefined') {
-    console.error('marked.js not loaded. Include: <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>');
+    console.error('[MarkdownRenderer] marked.js not loaded after timeout');
     return false;
   }
   
   if (typeof hljs === 'undefined') {
-    console.warn('highlight.js not loaded. Syntax highlighting will be disabled.');
+    console.warn('[MarkdownRenderer] highlight.js not loaded. Syntax highlighting will be disabled.');
   }
 
   // Configure marked with GFM (GitHub Flavored Markdown)
@@ -150,7 +160,7 @@ function renderMarkdown(markdownText) {
  * @param {HTMLElement} element - Target DOM element
  * @param {string} markdownText - Markdown text to render
  */
-function renderMarkdownToElement(element, markdownText) {
+export function renderMarkdownToElement(element, markdownText) {
   // Render markdown to HTML
   const html = renderMarkdown(markdownText);
   
@@ -251,7 +261,7 @@ function escapeHtml(text) {
  * @param {string} partialMarkdown - Potentially incomplete markdown
  * @returns {string} Rendered HTML (may have incomplete blocks)
  */
-function renderPartialMarkdown(partialMarkdown) {
+export function renderPartialMarkdown(partialMarkdown) {
   if (!partialMarkdown) return '';
   
   try {
