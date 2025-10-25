@@ -1525,7 +1525,7 @@ ${analysisContext}`;
     parts: [{ text: systemPrompt }]
   },
   generationConfig: {
-    maxOutputTokens: 512,
+    maxOutputTokens: 8192,
     temperature: 0.7,
     topP: 0.9
   }

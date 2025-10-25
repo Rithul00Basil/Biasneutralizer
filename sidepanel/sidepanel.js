@@ -168,6 +168,100 @@ document.addEventListener('DOMContentLoaded', async () => {
     return Array.from(seen.values());
   }
 
+  function buildConsensusMarkdown(consensusJSON, options = {}) {
+    if (!consensusJSON || typeof consensusJSON !== 'object') {
+      return '';
+    }
+
+    const allowedRatings = new Set(['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear']);
+    const allowedConfidence = new Set(['High', 'Medium', 'Low']);
+
+    let rating = String(consensusJSON.overall_bias_assessment || '').trim();
+    if (!allowedRatings.has(rating)) {
+      rating = 'Unclear';
+    }
+
+    let confidence = String(consensusJSON.confidence || '').trim();
+    if (!allowedConfidence.has(confidence)) {
+      confidence = 'Medium';
+    }
+
+    const keyObservation = (typeof consensusJSON.key_observation === 'string' && consensusJSON.key_observation.trim())
+      ? consensusJSON.key_observation.trim()
+      : 'No key observation was provided.';
+
+    const findingsSection = [
+      '### Findings',
+      `- **Overall Bias Assessment:** ${rating}`,
+      `- **Confidence:** ${confidence}`,
+      `- **Key Observation:** ${keyObservation}`
+    ];
+
+    const loadedFallback = Array.isArray(options.loadedPhrases) ? options.loadedPhrases : [];
+    const consensusBiased = Array.isArray(consensusJSON.biased_language_examples)
+      ? consensusJSON.biased_language_examples
+      : [];
+
+    const biasedExamples = (consensusBiased.length ? consensusBiased : loadedFallback)
+      .filter(ex => ex && (ex.phrase || ex.phrase_text))
+      .slice(0, 5)
+      .map(ex => {
+        const phrase = ex.phrase || ex.phrase_text || '';
+        const dir = ex.direction ? ` (${ex.direction})` : '';
+        const explanation = ex.explanation || ex.description || 'Context not provided.';
+        const alt = ex.neutral_alternative ? ` Alternative: "${ex.neutral_alternative}".` : '';
+        return `- **"${phrase}"**${dir}: ${explanation}${alt}`;
+      });
+
+    if (biasedExamples.length === 0) {
+      biasedExamples.push('- No significant loaded language was detected.');
+    }
+
+    const neutralFallback = Array.isArray(options.neutralElements) ? options.neutralElements : [];
+    const consensusNeutral = Array.isArray(consensusJSON.neutral_elements_examples)
+      ? consensusJSON.neutral_elements_examples
+      : [];
+
+    const neutralExamples = (consensusNeutral.length ? consensusNeutral : neutralFallback)
+      .filter(ex => ex)
+      .slice(0, 5)
+      .map(ex => {
+        if (typeof ex === 'string') return `- ${ex}`;
+        const type = ex.type || ex.origin || 'Observation';
+        const description = ex.description || ex.summary || ex.quote_summary || 'No description provided.';
+        return `- **${type}:** ${description}`;
+      });
+
+    if (neutralExamples.length === 0) {
+      neutralExamples.push('- No neutral or balancing elements were identified.');
+    }
+
+    const voteSummary = consensusJSON.agent_vote_summary && typeof consensusJSON.agent_vote_summary === 'object'
+      ? Object.entries(consensusJSON.agent_vote_summary)
+          .map(([agent, vote]) => `- **${agent.replace(/_/g, ' ')}:** ${vote}`)
+      : [];
+
+    const sections = [
+      '## Overall Bias Assessment',
+      `Rating: ${rating}`,
+      `Confidence: ${confidence}`,
+      '',
+      ...findingsSection,
+      '',
+      '### Biased Languages Used',
+      ...biasedExamples,
+      '',
+      '### Neutral Languages Used',
+      ...neutralExamples
+    ];
+
+    if (voteSummary.length) {
+      sections.push('', '### Agent Vote Summary', ...voteSummary);
+    }
+
+    return sections.join('\n');
+  }
+
   /**
    * Recompute source balance deterministically (don't trust agent verdict)
    */
@@ -1452,8 +1546,34 @@ ${contentType} content is evaluated differently than news reporting and does not
       // AGENT 7: Consensus Moderator (synthesizes all votes)
       spLog('Agent 7: Consensus Moderator - Synthesizing votes');
       const moderatorPrompt = OnDevicePrompts.createConsensusModerator_JSON(agentResults);
-      const finalReportMarkdown = await session.prompt(moderatorPrompt);
-      
+      const moderatorRaw = await session.prompt(moderatorPrompt);
+      const consensusJSON = parseJSONish(moderatorRaw, null);
+
+      const neutralFallback = [];
+      if (Array.isArray(counterpointJSON.examples)) {
+        counterpointJSON.examples
+          .filter(example => typeof example === 'string' && example.trim())
+          .slice(0, 3)
+          .forEach(example => neutralFallback.push({ type: 'Counterpoint', description: example.trim() }));
+      }
+      if (Array.isArray(sourceJSON.sources_listed)) {
+        sourceJSON.sources_listed
+          .filter(src => src && src.name && src.quote_summary)
+          .slice(0, 3)
+          .forEach(src => neutralFallback.push({ type: `Source (${src.lean || 'Neutral'})`, description: `${src.name}: ${src.quote_summary}` }));
+      }
+
+      let finalReportMarkdown = moderatorRaw;
+      if (consensusJSON) {
+        finalReportMarkdown = buildConsensusMarkdown(consensusJSON, {
+          loadedPhrases: allLoadedPhrases,
+          neutralElements: neutralFallback
+        });
+        spLog('Consensus Moderator JSON parsed successfully');
+      } else {
+        spWarn('Consensus Moderator response was not valid JSON; using raw output');
+      }
+
       // allLoadedPhrases already computed and verified above
       spLog('Analysis complete:', {
         phrasesFound: allLoadedPhrases.length,
@@ -1472,6 +1592,7 @@ ${contentType} content is evaluated differently than news reporting and does not
         text: finalReportMarkdown,
         extractedRating: extractedRating,
         extractedConfidence: extractedConfidence,
+        consensusModerator: consensusJSON || null,
         // Store raw agent data for results page display
         languageAnalysis: allLoadedPhrases, // Political phrases for display
         biasIndicators: politicalJSON.loaded_phrases || [],
