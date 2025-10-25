@@ -57,15 +57,22 @@
       return;
     }
     
-    // Fallback: Try to get summary from lastSummary (for active scans)
+    // Fallback: Try to get summary from report-specific key
+    const summaryKey = currentReport?.id ? `summary_${currentReport.id}` : null;
+    
+    if (!summaryKey) {
+      summarySection.innerHTML = '<p class="placeholder-text">Summary not available (no report ID)</p>';
+      return;
+    }
+    
     let attempts = 0;
     const maxAttempts = 60;
 
     const pollInterval = setInterval(async () => {
       attempts++;
 
-      const storage = await storageGet(['lastSummary']);
-      const summaryData = storage?.lastSummary;
+      const storage = await storageGet([summaryKey]);
+      const summaryData = storage?.[summaryKey];
 
       if (!summaryData) {
         if (attempts >= maxAttempts) {
@@ -90,7 +97,7 @@
           }
         }
         
-        resultsLog('Summary loaded from lastSummary (active scan)');
+        resultsLog('Summary loaded from report-specific key:', summaryKey);
       } else if (summaryData.status === 'generating') {
         summarySection.innerHTML = '<p class="placeholder-text">⏳ Generating summary...</p>';
       } else if (summaryData.status === 'error') {
@@ -974,6 +981,7 @@
 
     const sectionHeaders = {
       'KEY FINDINGS': 'keyFindings',
+      'FINDINGS': 'keyFindings',  // Added: Matches "### Findings" from prompts
       'LOADED LANGUAGE': 'loadedLanguage',
       'LOADED LANGUAGE EXAMPLES': 'loadedLanguage',
       'BIASED LANGUAGES USED': 'loadedLanguage',
@@ -1651,10 +1659,3 @@ ${analysisContext}`;
   document.documentElement.style.scrollBehavior = 'smooth';
 
 })();
-
-
-
-
-
-
-

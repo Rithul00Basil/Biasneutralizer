@@ -1028,12 +1028,15 @@ function highlightSinglePhrase(phraseObj, className, dataType, contentRoot, high
 
   // Defensive check after extraction
   if (!phrase || typeof phrase !== 'string') {
-    contentWarn('Neutral phrase missing text:', phraseObj);
+    contentWarn('Phrase missing text:', phraseObj);
     return;
   }
   
-  if (phrase.trim().length === 0) {
-    contentWarn('Empty phrase text:', phraseObj);
+  // Normalize phrase: strip surrounding quotes and trim
+  phrase = phrase.replace(/^["'""'']+|["'""'']+$/g, '').trim();
+  
+  if (phrase.length === 0) {
+    contentWarn('Empty phrase after normalization:', phraseObj);
     return;
   }
 
@@ -1925,5 +1928,3 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
-
-

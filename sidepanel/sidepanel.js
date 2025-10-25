@@ -89,12 +89,368 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // === on-device quick-scan helpers ===
-  function safeJSON(x, fallback = null) {
-    try { return JSON.parse(x); } catch { return fallback; }
+  function parseJSONish(raw, fallback = null) {
+    try {
+      if (typeof raw !== 'string') return fallback;
+      
+      // Strip common fences/backticks that LLMs add
+      let cleaned = raw.replace(/^\s*```(?:json)?\s*/i, '')
+                       .replace(/\s*```\s*$/i, '')
+                       .trim();
+      
+      // Fallback: extract first {...} block if extra text remains
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) {
+        cleaned = match[0];
+      }
+      
+      return JSON.parse(cleaned);
+    } catch (error) {
+      spWarn('JSON parse failed:', error.message, 'Raw:', raw?.slice(0, 200));
+      return fallback;
+    }
   }
 
   function countWords(text) {
     return (text || '').trim().split(/\s+/).filter(Boolean).length;
+  }
+
+  /**
+   * Find all occurrences of a phrase in text (case-insensitive)
+   * Returns array of [start, end] position tuples
+   */
+  function findAllOccurrences(text, needle) {
+    const positions = [];
+    if (!text || !needle) return positions;
+    
+    const normalizedNeedle = needle.trim();
+    // Escape special regex characters
+    const escaped = normalizedNeedle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      positions.push([match.index, match.index + match[0].length]);
+    }
+    
+    return positions;
+  }
+
+  /**
+   * Verify phrases exist in article text and add positions
+   * Returns only phrases that were actually found
+   */
+  function verifyAndLocatePhrases(phrases, articleText) {
+    if (!Array.isArray(phrases) || !articleText) return [];
+    
+    return phrases
+      .map(phrase => ({
+        ...phrase,
+        positions: findAllOccurrences(articleText, phrase.phrase || '')
+      }))
+      .filter(phrase => phrase.positions && phrase.positions.length > 0);
+  }
+
+  /**
+   * Deduplicate phrases by lowercase phrase text
+   */
+  function deduplicatePhrases(phrases) {
+    if (!Array.isArray(phrases)) return [];
+    const seen = new Map();
+    
+    for (const phrase of phrases) {
+      const key = (phrase.phrase || '').toLowerCase().trim();
+      if (key && !seen.has(key)) {
+        seen.set(key, phrase);
+      }
+    }
+    
+    return Array.from(seen.values());
+  }
+
+  /**
+   * Recompute source balance deterministically (don't trust agent verdict)
+   */
+  function computeSourceBalance(sources) {
+    if (!Array.isArray(sources)) {
+      return { counts: { left: 0, right: 0, neutral: 0 }, verdict: 'Balanced' };
+    }
+
+    const counts = { left: 0, right: 0, neutral: 0 };
+    
+    for (const source of sources) {
+      const lean = (source.lean || '').toLowerCase();
+      if (lean.includes('left')) {
+        counts.left++;
+      } else if (lean.includes('right')) {
+        counts.right++;
+      } else {
+        counts.neutral++;
+      }
+    }
+    
+    const totalLR = counts.left + counts.right;
+    let verdict;
+    
+    if (totalLR === 0) {
+      verdict = 'Balanced';
+    } else if (counts.left === 0 || counts.right === 0) {
+      verdict = `One-sided ${counts.left ? 'Left' : 'Right'}`;
+    } else if (Math.max(counts.left, counts.right) / totalLR > 0.7) {
+      verdict = `Favors ${counts.left > counts.right ? 'Left' : 'Right'}`;
+    } else {
+      verdict = 'Balanced';
+    }
+    
+    return { counts, verdict };
+  }
+
+  // === Extraction functions for on-device analysis ===
+  function extractRating(text) {
+    spLog('extractRating: Starting extraction from text length:', text?.length || 0);
+    
+    if (!text || typeof text !== 'string') {
+      spLog('extractRating: Invalid input, falling back to default');
+      return 'Unclear';
+    }
+
+    // Strategy 1: Try multiple markdown patterns WITHOUT line-start anchors
+    const ratingHeaderPatterns = [
+      // Pattern 1: Bullet point with bold markdown (most likely from Judge)
+      /[-*]\s*\*\*Overall Bias Assessment:\*\*\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 2: Just the bold header anywhere in text
+      /\*\*Overall Bias Assessment:\*\*\s*:?\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 3: Without bold markers
+      /Overall Bias Assessment:\s*:?\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 4: With colon variations
+      /Overall\s+Bias\s+Assessment\s*[:：]\s*\[?([^\]\n]+)\]?/i
+    ];
+
+    for (const pattern of ratingHeaderPatterns) {
+      const markdownMatch = text.match(pattern);
+      if (markdownMatch && markdownMatch[1]) {
+        let result = markdownMatch[1]
+          .trim()
+          .replace(/[\[\]]/g, '') // Remove any brackets
+          .replace(/^["']|["']$/g, '') // Remove quotes
+          .replace(/\.$/, ''); // Remove trailing period
+        
+        // Normalize common variations
+        const normalizations = {
+          'centre': 'Center',
+          'left': 'Lean Left',
+          'right': 'Lean Right',
+          'strong left': 'Strong Left',
+          'strong right': 'Strong Right',
+          'unknown': 'Unclear',
+          'n/a': 'Unclear',
+          'none': 'Unclear'
+        };
+        
+        const normalized = normalizations[result.toLowerCase()] || result;
+        
+        // Validate it's an allowed rating
+        const allowedRatings = ['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear'];
+        if (allowedRatings.some(r => r.toLowerCase() === normalized.toLowerCase())) {
+          // Return with correct casing
+          const finalResult = allowedRatings.find(r => r.toLowerCase() === normalized.toLowerCase()) || normalized;
+          spLog('extractRating: Success via markdown pattern ->', finalResult);
+          return finalResult;
+        }
+        
+        spLog('extractRating: Found value but not in allowed list:', result);
+      }
+    }
+
+    // Strategy 2: Try simple "Rating:" patterns (legacy format)
+    const simplePatterns = [
+      /Rating:\s*\[?([^\]\n]+)\]?/i,
+      /\[RATING\]\s*:\s*\[?([^\]\n]+)\]?/i,
+      /Final Rating:\s*\[?([^\]\n]+)\]?/i
+    ];
+
+    for (const pattern of simplePatterns) {
+      const simpleMatch = text.match(pattern);
+      if (simpleMatch && simpleMatch[1]) {
+        const result = simpleMatch[1]
+          .trim()
+          .replace(/[\[\]]/g, '')
+          .replace(/^["']|["']$/g, '');
+        spLog('extractRating: Success via simple pattern ->', result);
+        return result;
+      }
+    }
+
+    // Strategy 3: Try JSON parsing
+    spLog('extractRating: Trying JSON parsing...');
+    const parsedJson = parseJSONish(text, null);
+    
+    if (parsedJson && typeof parsedJson === 'object') {
+      // Check various possible JSON paths
+      const jsonPaths = [
+        parsedJson?.findings?.overall_bias_assessment,
+        parsedJson?.report?.findings?.overall_bias_assessment,
+        parsedJson?.verdict?.overall_bias_assessment,
+        parsedJson?.overall_bias_assessment,
+        parsedJson?.bias_assessment,
+        parsedJson?.rating,
+        parsedJson?.final_rating
+      ];
+
+      for (const value of jsonPaths) {
+        if (value && typeof value === 'string') {
+          const result = value.trim();
+          spLog('extractRating: Success via JSON path ->', result);
+          return result;
+        }
+      }
+      spLog('extractRating: JSON parsed but no rating found in expected paths');
+    }
+
+    // Strategy 4: Last resort - scan for rating keywords in context
+    const contextPatterns = [
+      /(?:rating|assessment|verdict).*?(?:is|:|=)\s*["']?([^"'\n]+?)["']?(?:\.|,|\n|$)/i
+    ];
+
+    for (const pattern of contextPatterns) {
+      const contextMatch = text.match(pattern);
+      if (contextMatch && contextMatch[1]) {
+        const potentialRating = contextMatch[1].trim();
+        const allowedRatings = ['Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right', 'Unclear'];
+        if (allowedRatings.some(r => potentialRating.toLowerCase().includes(r.toLowerCase()))) {
+          const result = allowedRatings.find(r => potentialRating.toLowerCase().includes(r.toLowerCase()));
+          spLog('extractRating: Success via context scan ->', result);
+          return result;
+        }
+      }
+    }
+
+    // Fallback
+    spLog('extractRating: All strategies failed, falling back to default "Unclear"');
+    return 'Unclear';
+  }
+
+  function extractConfidence(text) {
+    spLog('extractConfidence: Starting extraction from text length:', text?.length || 0);
+    
+    if (!text || typeof text !== 'string') {
+      spLog('extractConfidence: Invalid input, falling back to default');
+      return 'Medium';
+    }
+
+    // Strategy 1: Try multiple markdown patterns WITHOUT line-start anchors
+    const confidenceHeaderPatterns = [
+      // Pattern 1: Bullet point with bold markdown (most likely from Judge)
+      /[-*]\s*\*\*Confidence:\*\*\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 2: Just the bold header anywhere in text
+      /\*\*Confidence:\*\*\s*:?\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 3: Without bold markers
+      /Confidence:\s*:?\s*\[?([^\]\n]+)\]?/i,
+      // Pattern 4: With variations
+      /Confidence\s+Level\s*[:：]\s*\[?([^\]\n]+)\]?/i,
+      /Confidence\s*[:：]\s*\[?([^\]\n]+)\]?/i
+    ];
+
+    for (const pattern of confidenceHeaderPatterns) {
+      const markdownMatch = text.match(pattern);
+      if (markdownMatch && markdownMatch[1]) {
+        let result = markdownMatch[1]
+          .trim()
+          .replace(/[\[\]]/g, '') // Remove any brackets
+          .replace(/^["']|["']$/g, '') // Remove quotes
+          .replace(/\.$/, ''); // Remove trailing period
+        
+        // Normalize common variations
+        const normalizations = {
+          'very high': 'High',
+          'very low': 'Low',
+          'moderate': 'Medium',
+          'mid': 'Medium',
+          'unclear': 'Medium',
+          'unknown': 'Medium'
+        };
+        
+        const normalized = normalizations[result.toLowerCase()] || result;
+        
+        // Validate it's an allowed confidence level
+        const allowedLevels = ['High', 'Medium', 'Low'];
+        if (allowedLevels.some(l => l.toLowerCase() === normalized.toLowerCase())) {
+          // Return with correct casing
+          const finalResult = allowedLevels.find(l => l.toLowerCase() === normalized.toLowerCase()) || normalized;
+          spLog('extractConfidence: Success via markdown pattern ->', finalResult);
+          return finalResult;
+        }
+        
+        spLog('extractConfidence: Found value but not in allowed list:', result);
+      }
+    }
+
+    // Strategy 2: Try simple "Confidence:" patterns (legacy format)
+    const simplePatterns = [
+      /Confidence:\s*\[?([^\]\n]+)\]?/i,
+      /\[CONFIDENCE\]\s*:\s*\[?([^\]\n]+)\]?/i,
+      /Confidence Level:\s*\[?([^\]\n]+)\]?/i
+    ];
+
+    for (const pattern of simplePatterns) {
+      const simpleMatch = text.match(pattern);
+      if (simpleMatch && simpleMatch[1]) {
+        const result = simpleMatch[1]
+          .trim()
+          .replace(/[\[\]]/g, '')
+          .replace(/^["']|["']$/g, '');
+        spLog('extractConfidence: Success via simple pattern ->', result);
+        return result;
+      }
+    }
+
+    // Strategy 3: Try JSON parsing
+    spLog('extractConfidence: Trying JSON parsing...');
+    const parsedJson = parseJSONish(text, null);
+    
+    if (parsedJson && typeof parsedJson === 'object') {
+      // Check various possible JSON paths
+      const jsonPaths = [
+        parsedJson?.findings?.confidence,
+        parsedJson?.report?.findings?.confidence,
+        parsedJson?.verdict?.confidence,
+        parsedJson?.confidence,
+        parsedJson?.confidence_level,
+        parsedJson?.report?.confidence,
+        parsedJson?.findings?.confidence_level
+      ];
+
+      for (const value of jsonPaths) {
+        if (value && typeof value === 'string') {
+          const result = value.trim();
+          spLog('extractConfidence: Success via JSON path ->', result);
+          return result;
+        }
+      }
+      spLog('extractConfidence: JSON parsed but no confidence found in expected paths');
+    }
+
+    // Strategy 4: Last resort - scan for confidence keywords in context
+    const contextPatterns = [
+      /(?:confidence|certainty).*?(?:is|:|=)\s*["']?([^"'\n]+?)["']?(?:\.|,|\n|$)/i
+    ];
+
+    for (const pattern of contextPatterns) {
+      const contextMatch = text.match(pattern);
+      if (contextMatch && contextMatch[1]) {
+        const potentialConfidence = contextMatch[1].trim();
+        const allowedLevels = ['High', 'Medium', 'Low'];
+        if (allowedLevels.some(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()))) {
+          const result = allowedLevels.find(l => potentialConfidence.toLowerCase().includes(l.toLowerCase()));
+          spLog('extractConfidence: Success via context scan ->', result);
+          return result;
+        }
+      }
+    }
+
+    // Fallback
+    spLog('extractConfidence: All strategies failed, falling back to default "Medium"');
+    return 'Medium';
   }
 
   function isValidBalancedExcerpt(example) {
@@ -674,21 +1030,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Give the summary generation 30 seconds to complete
     let summaryAttempts = 0;
     const maxSummaryWait = 30; // 30 seconds max
+    const summaryKey = `summary_${finalReportId}`;
     
     while (summaryAttempts < maxSummaryWait) {
-      const summaryStorage = await safeStorageGet(['lastSummary']);
-      const lastSummary = summaryStorage?.lastSummary;
+      const summaryStorage = await safeStorageGet([summaryKey]);
+      const lastSummary = summaryStorage?.[summaryKey];
       
       if (lastSummary && lastSummary.status === 'complete') {
         // Summary is ready! Embed it in the report
         resultToStore.articleSummary = lastSummary.data;
         resultToStore.summaryUsedCloud = lastSummary.usedCloudFallback || false;
-        spLog('Embedded summary detected in report payload');
+        spLog('Embedded summary detected in report payload for:', finalReportId);
         break;
       }
       
       if (lastSummary && lastSummary.status === 'error') {
-        spWarn('Summary embedding failed; saving report without it');
+        spWarn('Summary embedding failed for report', finalReportId, '- saving report without it');
         break;
       }
       
@@ -698,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     if (summaryAttempts >= maxSummaryWait) {
-      spWarn('Summary embedding timed out; saving report without it');
+      spWarn('Summary embedding timed out for report', finalReportId, '- saving report without it');
     }
     // ===== END WAIT FOR SUMMARY =====
 
@@ -714,6 +1071,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       analysisHistory: updatedHistory,
       lastAnalysis: resultToStore
     });
+
+    // Cleanup old summaries to prevent storage bloat
+    cleanupOldSummaries();
 
     if (!stored) {
       showError(
@@ -739,15 +1099,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ========================================
 
   /**
+   * Cleanup old summary entries to prevent storage bloat
+   */
+  async function cleanupOldSummaries() {
+    try {
+      const storage = await chrome.storage.local.get(null);
+      const summaryKeys = Object.keys(storage).filter(k => k.startsWith('summary_'));
+      
+      if (summaryKeys.length > 10) {
+        // Keep only last 10 summaries (most recent based on reportId timestamp)
+        const keysToDelete = summaryKeys
+          .sort((a, b) => {
+            const idA = parseInt(a.replace('summary_', ''));
+            const idB = parseInt(b.replace('summary_', ''));
+            return idA - idB; // Oldest first
+          })
+          .slice(0, summaryKeys.length - 10);
+        
+        for (const key of keysToDelete) {
+          await chrome.storage.local.remove(key);
+        }
+        spLog(`Cleaned up ${keysToDelete.length} old summary entries`);
+      }
+    } catch (error) {
+      spWarn('Failed to cleanup old summaries:', error);
+    }
+  }
+
+  /**
    * Triggers a separate summary generation process.
    * Tries on-device first, falls back to cloud if unavailable.
    * This runs independently of the main bias scan.
+   * @param {Object} articleContent - The article content to summarize
+   * @param {number} reportId - Unique report ID for this scan
    */
-  async function triggerOnDeviceSummary(articleContent) {
-    spLog('Starting independent summary generation...');
+  async function triggerOnDeviceSummary(articleContent, reportId) {
+    spLog('Starting independent summary generation for report:', reportId);
 
-    // Save a placeholder immediately so the UI can show a "generating" state
-    await safeStorageSet({ lastSummary: { status: 'generating' } });
+    // Save a placeholder with report-specific key
+    const summaryKey = `summary_${reportId}`;
+    await safeStorageSet({ [summaryKey]: { status: 'generating', timestamp: Date.now() } });
 
     // Try on-device summarization first
     if ('Summarizer' in self) {
@@ -768,15 +1159,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           );
 
-          // Save the successful on-device summary
+          // Save the successful on-device summary with report-specific key
           await safeStorageSet({ 
-            lastSummary: { 
+            [summaryKey]: { 
               status: 'complete', 
               data: summaryMarkdown, 
-              usedCloudFallback: false 
+              usedCloudFallback: false,
+              articleUrl: articleContent.url || '',
+              timestamp: Date.now()
             } 
           });
-          spLog('On-device summary generation complete; result saved');
+          spLog('On-device summary generation complete for report:', reportId);
           return;
         }
       } catch (error) {
@@ -828,20 +1221,23 @@ ${fullText}`;
       }
 
       await safeStorageSet({ 
-        lastSummary: { 
+        [summaryKey]: { 
           status: 'complete', 
           data: summaryText, 
-          usedCloudFallback: true 
+          usedCloudFallback: true,
+          articleUrl: articleContent.url || '',
+          timestamp: Date.now()
         } 
       });
-      spLog('Cloud summary generation complete; result saved');
+      spLog('Cloud summary generation complete for report:', reportId);
 
     } catch (error) {
       spError('Summary generation failed (both on-device and cloud):', error);
       await safeStorageSet({ 
-        lastSummary: { 
+        [summaryKey]: { 
           status: 'error', 
-          data: `Summary generation failed: ${error.message}` 
+          data: `Summary generation failed: ${error.message}`,
+          timestamp: Date.now()
         } 
       });
     }
@@ -919,156 +1315,201 @@ ${fullText}`;
     startStatusUpdates();
 
     try {
+      // Generate unique report ID for this scan
+      const reportId = Date.now();
+      
       // --- Immediately trigger the separate on-device summary ---
-      triggerOnDeviceSummary(articleContent);
-      spLog('Background summary generation started');
+      triggerOnDeviceSummary(articleContent, reportId);
+      spLog('Background summary generation started for report:', reportId);
 
       const availability = await window.LanguageModel.availability();
       if (availability !== 'available') {
         throw new Error(`On-device AI is not ready. Status: ${availability}`);
       }
 
-      const session = await window.LanguageModel.create();
+      const session = await window.LanguageModel.create({
+        outputLanguage: 'en'
+      });
       state.currentSession = session;
 
       const fullText = (articleContent.fullText || '').replace(/\s+/g, ' ').trim();
-      const articleLength = fullText.length;
+      const articleUrl = articleContent.url || '';
+      
+      spLog(`📄 Multi-Agent Analysis: ${fullText.length} chars`);
       
       // ============================================
-      // INTELLIGENT STRATEGY SELECTION
+      // MULTI-AGENT ORCHESTRATION (7 AGENTS)
       // ============================================
-      let strategy, contextData, chunkAnalyses;
       
-      if (articleLength <= CHUNKING_CONFIG.NO_CHUNK_THRESHOLD) {
-        // ============================================
-        // STRATEGY 1: WHOLE - No Chunking (5 AI calls)
-        // ============================================
-        strategy = 'WHOLE';
-        spLog(`📄 Strategy: WHOLE (${articleLength} chars) - No chunking needed`);
+      // AGENT 1: Opinion Detector (runs first - may short-circuit)
+      spLog('Agent 1: Opinion Detector');
+      const opinionPrompt = OnDevicePrompts.createOpinionDetectorPrompt(fullText, articleUrl);
+      const opinionRes = await session.prompt(opinionPrompt);
+      const opinionJSON = parseJSONish(opinionRes, { is_opinion: false, confidence: 'Medium' });
+      
+      spLog('Opinion Detection:', opinionJSON);
+      
+      // Handle Opinion and Interview content (exit early)
+      if (opinionJSON.is_opinion || opinionJSON.content_type === 'Interview') {
+        const contentType = opinionJSON.content_type || (opinionJSON.is_opinion ? 'Opinion' : 'Unknown');
+        const ratingLabel = contentType === 'Interview' ? 'Unclear (Interview Format)' : 'Unclear';
         
-        // Run context once on full article
-        const contextPrompt = OnDevicePrompts.createContextPrompt(fullText);
-        const contextRes = await session.prompt(contextPrompt);
-        const contextJSON = safeJSON(contextRes, { type: 'Unknown', tone: 'Neutral' });
-        contextData = `Type: ${contextJSON.type}, Tone: ${contextJSON.tone}`;
+        spLog(`${contentType} content detected - returning ${ratingLabel}`);
+        const specialReport = `### Findings
+- **Overall Bias Assessment:** ${ratingLabel}
+- **Confidence:** ${opinionJSON.confidence || 'Medium'}
+- **Content Type:** ${contentType}
+
+### ${contentType} Content Detected
+This content was identified as ${contentType.toLowerCase()} based on:
+${(opinionJSON.signals_found || []).map(s => `- ${s}`).join('\n')}
+
+${contentType === 'Interview' 
+  ? 'Interview content presents the views of the interviewee and is not rated for journalistic bias.'
+  : 'Opinion pieces are intentionally subjective and do not receive a bias rating.'}
+
+### Recommendation
+${contentType} content is evaluated differently than news reporting and does not receive a Left/Right/Center bias rating.`;
         
-        // Run all analysis agents in parallel on full article
-        const [langRes, huntRes, skepRes] = await Promise.all([
-          session.prompt(OnDevicePrompts.createLanguagePrompt(contextData, fullText)),
-          session.prompt(OnDevicePrompts.createHunterPrompt(contextData, fullText)),
-          session.prompt(OnDevicePrompts.createSkepticPrompt(contextData, fullText))
-        ]);
+        const analysisResult = {
+          text: specialReport,
+          extractedRating: ratingLabel,
+          extractedConfidence: opinionJSON.confidence || 'Medium',
+          content_type: contentType
+        };
         
-        chunkAnalyses = [{
-          context: contextJSON,
-          language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
-          hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
-          skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' })
-        }];
+        await session.destroy();
+        const reportId = Date.now();
+        await saveAnalysisResults(analysisResult, `on-device (${contentType.toLowerCase()})`, articleContent, reportId);
         
-      } else {
-        // ============================================
-        // STRATEGY 2 & 3: LIGHT/HEAVY Chunking
-        // ============================================
-        strategy = articleLength <= CHUNKING_CONFIG.LIGHT_CHUNK_THRESHOLD ? 'LIGHT' : 'HEAVY';
-        spLog(`📄 Strategy: ${strategy} (${articleLength} chars) - Smart chunking enabled`);
-        
-        // Step 1: Context agent runs ONCE on article summary
-        const articleSummary = fullText.substring(0, CHUNKING_CONFIG.CONTEXT_SUMMARY_SIZE);
-        const contextPrompt = OnDevicePrompts.createContextPrompt(articleSummary);
-        const contextRes = await session.prompt(contextPrompt);
-        const contextJSON = safeJSON(contextRes, { type: 'Unknown', tone: 'Neutral' });
-        contextData = `Type: ${contextJSON.type}, Tone: ${contextJSON.tone}`;
-        
-        spLog('Context Analysis Result:', {
-          type: contextJSON.type,
-          is_opinion: contextJSON.is_opinion_or_analysis,
-          confidence: contextJSON.confidence
-        });
-        
-        // Step 2: Smart chunk at natural boundaries
-        const chunks = smartChunk(fullText, CHUNKING_CONFIG.CHUNK_SIZE, CHUNKING_CONFIG.OVERLAP);
-        spLog(`📊 Created ${chunks.length} chunks at natural boundaries`);
-        
-        // Step 3: Run analysis agents on each chunk (parallel per chunk)
-        const analysisPromises = chunks.map(async (chunk) => {
-          const [langRes, huntRes, skepRes] = await Promise.all([
-            session.prompt(OnDevicePrompts.createLanguagePrompt(contextData, chunk)),
-            session.prompt(OnDevicePrompts.createHunterPrompt(contextData, chunk)),
-            session.prompt(OnDevicePrompts.createSkepticPrompt(contextData, chunk))
-          ]);
-          
-          return {
-            language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
-            hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
-            skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' })
-          };
-        });
-        
-        const chunkResults = await Promise.all(analysisPromises);
-        
-        // Combine context (run once) with chunk analyses
-        chunkAnalyses = [{
-          context: contextJSON,
-          ...chunkResults[0]
-        }, ...chunkResults.slice(1).map(result => ({ context: contextJSON, ...result }))];
+        stopStatusUpdates();
+        setView('default');
+        state.isScanning = false;
+        elements.scanButton.disabled = false;
+        return;
       }
-      spLog(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
-
-      // --- Aggregate highlight data from all chunks ---
-      spLog('Aggregating highlight data');
-      const allLoadedPhrases = [];
-      const allBalancedElements = [];
       
-      chunkAnalyses.forEach((chunkResult) => {
-        // Aggregate loaded phrases from language analysis
-        if (chunkResult.language && Array.isArray(chunkResult.language.loaded_phrases)) {
-          allLoadedPhrases.push(...chunkResult.language.loaded_phrases);
-        }
-        
-        // Aggregate balanced elements from skeptic analysis
-        if (chunkResult.skeptic && Array.isArray(chunkResult.skeptic.balanced_elements)) {
-          allBalancedElements.push(...chunkResult.skeptic.balanced_elements);
-        }
+      // AGENTS 2-6: Run all political analysis agents in parallel
+      spLog('Running Agents 2-6 in parallel: Political analysis');
+      const [politicalRes, heroRes, sourceRes, framingRes, counterpointRes] = await Promise.all([
+        session.prompt(OnDevicePrompts.createPoliticalLanguagePrompt(fullText)),
+        session.prompt(OnDevicePrompts.createHeroVillainPrompt(fullText)),
+        session.prompt(OnDevicePrompts.createSourceBalancePrompt(fullText)),
+        session.prompt(OnDevicePrompts.createFramingAnalyzerPrompt(fullText)),
+        session.prompt(OnDevicePrompts.createCounterpointCheckerPrompt(fullText))
+      ]);
+      
+      // Parse all agent results
+      const politicalJSON = parseJSONish(politicalRes, { loaded_phrases: [], overall_lean: 'Neutral', confidence: 'Low' });
+      const heroJSON = parseJSONish(heroRes, { portrayals: [], pattern: 'Neutral', political_lean: 'Neutral', confidence: 'Low' });
+      const sourceJSON = parseJSONish(sourceRes, { source_count: {}, sources_listed: [], balance_verdict: 'Balanced', confidence: 'Low' });
+      const framingJSON = parseJSONish(framingRes, { topic: 'Other', dominant_frame: 'Neutral', political_lean: 'Neutral', confidence: 'Low' });
+      const counterpointJSON = parseJSONish(counterpointRes, { counterpoints_present: false, balance_verdict: 'Balanced', suggests_lean: 'Neither', confidence: 'Low' });
+      
+      spLog('Agent Results:', {
+        political: politicalJSON.overall_lean,
+        hero: heroJSON.political_lean,
+        source: sourceJSON.balance_verdict,
+        framing: framingJSON.political_lean,
+        counterpoint: counterpointJSON.suggests_lean
       });
       
-      spLog('Aggregated phrases:', {
-        biasedCount: allLoadedPhrases.length,
-        neutralCount: allBalancedElements.length
+      // Unify phrase naming (handle both loaded_phrases and political_phrases)
+      const rawPhrases = politicalJSON.loaded_phrases || politicalJSON.political_phrases || [];
+      
+      // Verify phrases exist in article text and add positions
+      const verifiedPhrases = verifyAndLocatePhrases(rawPhrases, fullText);
+      
+      // Deduplicate phrases
+      const allLoadedPhrases = deduplicatePhrases(verifiedPhrases);
+      
+      // Recompute source balance (don't trust agent verdict)
+      const recomputedBalance = computeSourceBalance(sourceJSON.sources_listed || []);
+      sourceJSON.computed_balance = recomputedBalance;
+      
+      spLog('Verified phrases:', {
+        rawCount: rawPhrases.length,
+        verifiedCount: verifiedPhrases.length,
+        finalCount: allLoadedPhrases.length
       });
-
-      // --- Synthesize the results from all chunks ---
-      spLog('Synthesizing final report with on-device moderator');
-      const moderatorPrompt = OnDevicePrompts.createModeratorPrompt(JSON.stringify(chunkAnalyses, null, 2));
+      
+      spLog('Recomputed source balance:', recomputedBalance);
+      
+      // Aggregate all agent results for moderator
+      const agentResults = JSON.stringify({
+        opinion: opinionJSON,
+        political: { 
+          ...politicalJSON, 
+          loaded_phrases: allLoadedPhrases, // Use verified phrases
+          verified_count: allLoadedPhrases.length
+        },
+        hero_villain: heroJSON,
+        sources: sourceJSON,
+        framing: framingJSON,
+        counterpoints: counterpointJSON
+      }, null, 2);
+      
+      // AGENT 7: Consensus Moderator (synthesizes all votes)
+      spLog('Agent 7: Consensus Moderator - Synthesizing votes');
+      const moderatorPrompt = OnDevicePrompts.createConsensusModerator(agentResults);
       const finalReportMarkdown = await session.prompt(moderatorPrompt);
+      
+      // allLoadedPhrases already computed and verified above
+      spLog('Analysis complete:', {
+        phrasesFound: allLoadedPhrases.length,
+        reportLength: finalReportMarkdown.length
+      });
 
-      // The final report is a simple object containing the markdown text
-      const analysisResult = { text: finalReportMarkdown };
+      // Extract rating and confidence from the markdown BEFORE saving
+      // This matches what background.js does for cloud AI
+      const extractedRating = extractRating(finalReportMarkdown);
+      const extractedConfidence = extractConfidence(finalReportMarkdown);
+
+      spLog('Extracted from on-device report:', { extractedRating, extractedConfidence });
+
+      // Include extracted values and raw agent data in the result object
+      const analysisResult = { 
+        text: finalReportMarkdown,
+        extractedRating: extractedRating,
+        extractedConfidence: extractedConfidence,
+        // Store raw agent data for results page display
+        languageAnalysis: allLoadedPhrases, // Political phrases for display
+        biasIndicators: politicalJSON.loaded_phrases || [],
+        balancedElements: sourceJSON.sources_listed || [],
+        agentVotes: {
+          political: politicalJSON.overall_lean,
+          hero: heroJSON.political_lean,
+          sources: sourceJSON.balance_verdict,
+          framing: framingJSON.political_lean,
+          counterpoints: counterpointJSON.suggests_lean
+        }
+      };
 
       await session.destroy();
 
       // --- Save to history ---
       spLog('Saving analysis entry to history');
-      const reportId = Date.now();
+      // reportId already generated at start of scan
       
-      // Call saveAnalysisResults with reportId and strategy
-      const sourceLabel = `on-device (${strategy.toLowerCase()})`;
+      // Save with multi-agent source label
+      const sourceLabel = 'on-device (multi-agent)';
       await saveAnalysisResults(analysisResult, sourceLabel, articleContent, reportId);
 
       // --- Send highlighting data to content script ---
-      const hasBiasedPhrases = allLoadedPhrases.length > 0;
-      const hasNeutralPhrases = allBalancedElements.length > 0;
+      const hasPoliticalPhrases = allLoadedPhrases.length > 0;
       
-      if ((hasBiasedPhrases || hasNeutralPhrases) && tabId) {
+      if (hasPoliticalPhrases && tabId) {
         try {
+          // Political phrases already in correct format from loaded_phrases
+          const biasedPhrases = allLoadedPhrases;
+          
           await chrome.tabs.sendMessage(tabId, {
             type: 'HIGHLIGHT_DATA',
-            biasedPhrases: allLoadedPhrases,
-            neutralPhrases: allBalancedElements
+            biasedPhrases: biasedPhrases,
+            neutralPhrases: [] // Multi-agent doesn't track neutral phrases
           });
           spLog('Highlight data sent to content script:', {
-            biasedCount: allLoadedPhrases.length,
-            neutralCount: allBalancedElements.length
+            politicalPhrasesCount: biasedPhrases.length
           });
         } catch (error) {
           spWarn('Failed to send highlight data:', error);
@@ -1109,9 +1550,12 @@ ${fullText}`;
     setView('scanning');
     startStatusUpdates();
 
+    // Generate unique report ID for this scan
+    const reportId = Date.now();
+
     // --- Immediately trigger the separate on-device summary (runs independently) ---
-    triggerOnDeviceSummary(articleContent);
-    spLog('Background summary generation started');
+    triggerOnDeviceSummary(articleContent, reportId);
+    spLog('Background summary generation started for report:', reportId);
 
     spLog('Sending scan request to background script');
     spLog('Article content length:', articleContent.fullText?.length);
@@ -1151,7 +1595,7 @@ ${fullText}`;
           spLog('Response type:', typeof response.results);
           spLog('Response results:', response.results);
           spLog('Response results length:', typeof response.results === 'string' ? response.results.length : 'N/A');
-          await saveAnalysisResults(response.results, 'cloud', articleContent);
+          await saveAnalysisResults(response.results, 'cloud', articleContent, reportId);
         } else if (response.type === 'SCAN_ERROR') {
           spError('Background script error:', response.error);
           showError(
@@ -1192,15 +1636,8 @@ ${fullText}`;
     return;
   }
   
-  // Clear old summary before starting new scan
-  await safeStorageSet({
-    lastSummary: {
-      status: 'generating',
-      data: null,
-      timestamp: Date.now()
-    }
-  });
-  spLog('Cleared previous summary; ready for new scan');
+  // No need to clear global summary - each scan uses its own report-specific key
+  spLog('Starting new scan with report-specific summary tracking');
   
   try {
     const settings = await safeStorageGet(['privateMode']);
@@ -1513,12 +1950,3 @@ ${fullText}`;
   checkGPU();
   spLog('Side panel ready');
 });
-
-
-
-
-
-
-
-
-
