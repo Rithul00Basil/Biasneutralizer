@@ -1,0 +1,433 @@
+/* ========================================
+   ENHANCED MARKDOWN RENDERING STYLES
+   For tables, code blocks, and formatted content
+   ======================================== */
+
+/* ===== TABLE STYLES ===== */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 16px 0;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-white-90);
+}
+
+.markdown-table thead {
+  background: rgba(249, 115, 22, 0.15);
+  border-bottom: 2px solid rgba(249, 115, 22, 0.4);
+}
+
+.markdown-table thead th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-white-100);
+  font-family: var(--font-poppins);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.markdown-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s ease;
+}
+
+.markdown-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.markdown-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.markdown-table tbody td {
+  padding: 10px 16px;
+  color: var(--text-white-80);
+}
+
+/* Table cell alignment */
+.markdown-table th[align="left"],
+.markdown-table td[align="left"] {
+  text-align: left;
+}
+
+.markdown-table th[align="center"],
+.markdown-table td[align="center"] {
+  text-align: center;
+}
+
+.markdown-table th[align="right"],
+.markdown-table td[align="right"] {
+  text-align: right;
+}
+
+/* ===== CODE BLOCK STYLES ===== */
+.code-block-wrapper {
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.code-language {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-white-70);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+.code-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--text-white-80);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-inter);
+}
+
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-white-100);
+}
+
+.code-copy-btn.copied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #10B981;
+}
+
+.code-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.code-block-wrapper pre {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.code-block-wrapper pre code {
+  display: block;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e5e7eb;
+  background: none;
+  padding: 0;
+}
+
+/* Inline code (not in code blocks) */
+code:not(.hljs) {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+/* ===== SYNTAX HIGHLIGHTING (Highlight.js) ===== */
+/* Using 'Atom One Dark' inspired theme */
+.hljs {
+  background: transparent;
+  color: #abb2bf;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.hljs-doctag,
+.hljs-keyword,
+.hljs-formula {
+  color: #c678dd;
+}
+
+.hljs-section,
+.hljs-name,
+.hljs-selector-tag,
+.hljs-deletion,
+.hljs-subst {
+  color: #e06c75;
+}
+
+.hljs-literal {
+  color: #56b6c2;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta-string {
+  color: #98c379;
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: #e6c07b;
+}
+
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-number {
+  color: #d19a66;
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-title {
+  color: #61aeee;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-link {
+  text-decoration: underline;
+}
+
+/* ===== MARKDOWN CONTENT STYLES ===== */
+
+/* Paragraphs */
+.assistant-message p,
+.card-body p {
+  margin: 0 0 12px 0;
+  line-height: 1.6;
+}
+
+.assistant-message p:last-child,
+.card-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Headers */
+.assistant-message h1,
+.assistant-message h2,
+.assistant-message h3,
+.card-body h1,
+.card-body h2,
+.card-body h3 {
+  color: var(--text-white-100);
+  font-family: var(--font-poppins);
+  font-weight: 600;
+  margin: 20px 0 12px 0;
+  line-height: 1.3;
+}
+
+.assistant-message h1:first-child,
+.assistant-message h2:first-child,
+.assistant-message h3:first-child,
+.card-body h1:first-child,
+.card-body h2:first-child,
+.card-body h3:first-child {
+  margin-top: 0;
+}
+
+.assistant-message h1,
+.card-body h1 {
+  font-size: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 8px;
+}
+
+.assistant-message h2,
+.card-body h2 {
+  font-size: 19px;
+}
+
+.assistant-message h3,
+.card-body h3 {
+  font-size: 16px;
+}
+
+/* Lists */
+.assistant-message ul,
+.assistant-message ol,
+.card-body ul,
+.card-body ol {
+  margin: 12px 0;
+  padding-left: 24px;
+}
+
+.assistant-message li,
+.card-body li {
+  margin-bottom: 6px;
+  line-height: 1.6;
+}
+
+.assistant-message ul ul,
+.assistant-message ol ul,
+.assistant-message ul ol,
+.assistant-message ol ol,
+.card-body ul ul,
+.card-body ol ul,
+.card-body ul ol,
+.card-body ol ol {
+  margin: 6px 0;
+}
+
+/* Task lists (checkboxes) */
+.assistant-message li > input[type="checkbox"],
+.card-body li > input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+/* Blockquotes */
+.markdown-blockquote {
+  border-left: 4px solid rgba(96, 165, 250, 0.6);
+  padding-left: 16px;
+  margin: 16px 0;
+  color: var(--text-white-80);
+  font-style: italic;
+  background: rgba(96, 165, 250, 0.05);
+  padding: 12px 16px;
+  border-radius: 4px;
+}
+
+.markdown-blockquote p {
+  margin: 8px 0;
+}
+
+.markdown-blockquote p:first-child {
+  margin-top: 0;
+}
+
+.markdown-blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Horizontal rules */
+.assistant-message hr,
+.card-body hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 20px 0;
+}
+
+/* Links */
+.assistant-message a,
+.card-body a {
+  color: #60a5fa;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.3);
+  transition: all 0.2s ease;
+}
+
+.assistant-message a:hover,
+.card-body a:hover {
+  color: #93c5fd;
+  border-bottom-color: rgba(96, 165, 250, 0.6);
+}
+
+/* Strikethrough */
+.assistant-message del,
+.assistant-message s,
+.card-body del,
+.card-body s {
+  color: var(--text-white-60);
+  text-decoration: line-through;
+}
+
+/* LaTeX Math */
+.assistant-message .katex,
+.card-body .katex {
+  font-size: 1.1em;
+}
+
+.assistant-message .katex-display,
+.card-body .katex-display {
+  margin: 16px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ===== RESPONSIVE TABLES ===== */
+@media (max-width: 768px) {
+  .table-wrapper {
+    font-size: 12px;
+  }
+  
+  .markdown-table thead th,
+  .markdown-table tbody td {
+    padding: 8px 12px;
+  }
+  
+  .code-block-wrapper pre {
+    padding: 12px;
+  }
+  
+  .code-block-wrapper pre code {
+    font-size: 12px;
+  }
+}
+
+/* ===== SCROLLBAR STYLES FOR CODE AND TABLES ===== */
+.table-wrapper::-webkit-scrollbar,
+.code-block-wrapper pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar-track,
+.code-block-wrapper pre::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb,
+.code-block-wrapper pre::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover,
+.code-block-wrapper pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
