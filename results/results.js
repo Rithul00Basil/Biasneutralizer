@@ -1515,8 +1515,8 @@ Format your responses using markdown (bold, italics, lists, headers, code blocks
 ANALYSIS CONTEXT (for reference when discussing this article):
 ${analysisContext}`;
 
-    // Hardcoded to use cloud model: gemini-flash-lite-latest
-    const model = 'gemini-flash-lite-latest';
+    // Use full-capability Flash model for assistant
+    const model = 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}&alt=sse`;
 
     const requestBody = {

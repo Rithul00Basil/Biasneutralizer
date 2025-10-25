@@ -1,10 +1,9 @@
 ﻿export const OnDevicePrompts = {
-  
-  // ========== AGENT 1: OPINION DETECTOR ==========
-  // ONLY JOB: Is this Opinion or News?
-  createOpinionDetectorPrompt: (text, url = "") => `**Return only JSON. No markdown. No code fences.**
 
-You are an OPINION DETECTOR. Your ONLY job: Determine if this is Opinion, Interview, or News.
+  // ========== AGENT 1: OPINION DETECTOR ==========
+  createOpinionDetectorPrompt: (text, url = "") => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
+
+You are an OPINION DETECTOR. Your ONLY job: Determine if this is Opinion, Interview, or News based on strict signals.
 
 OPINION SIGNALS (if ANY present → Opinion):
 - URL contains: "/opinion/", "/commentary/", "/op-ed/", "/editorial/", "/commentisfree/"
@@ -23,19 +22,19 @@ INTERVIEW SIGNALS (if present → Interview, not Opinion):
 
 URL: ${url}
 
-Output ONLY this JSON (signals_found: max 3):
+Output ONLY this exact JSON structure (signals_found: max 3):
 {
   "is_opinion": true/false,
   "content_type": "Opinion/Interview/News",
-  "signals_found": ["list of signals detected"],
+  "signals_found": ["list of specific signals detected"],
   "confidence": "High/Medium/Low"
 }
 
 RULES:
-- If Interview signals present: content_type="Interview", is_opinion=false
-- If Opinion signals present: content_type="Opinion", is_opinion=true
-- Otherwise: content_type="News", is_opinion=false
-- DO NOT wrap in code fences or markdown
+- If Interview signals present: content_type="Interview", is_opinion=false.
+- If Opinion signals present: content_type="Opinion", is_opinion=true.
+- Otherwise: content_type="News", is_opinion=false.
+- **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
@@ -43,38 +42,21 @@ ${text.slice(0, 3000)}
 `,
 
   // ========== AGENT 2: POLITICAL LANGUAGE DETECTOR ==========
-  // ONLY JOB: Find politically charged words/phrases
-  createPoliticalLanguagePrompt: (text) => `**Return only JSON. No markdown. No code fences.**
+  createPoliticalLanguagePrompt: (text) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are a POLITICAL LANGUAGE DETECTOR. Find words/phrases that signal Left or Right political lean.
+You are a POLITICAL LANGUAGE DETECTOR. Find words/phrases signalling Left or Right political lean from the provided list.
 
-RIGHT-WING LANGUAGE:
-Immigration: "illegal aliens", "border crisis", "catch-and-release", "open borders", "sanctuary cities"
-Crime: "thugs", "law and order", "tough on crime", "criminal illegals"
-Economics: "job creators", "tax burden", "government overreach", "free market", "regulations killing jobs"
-Social: "traditional values", "parental rights", "biological male/female", "unborn child", "woke"
-Media: "legacy media", "mainstream media bias", "fake news"
-Government: "big government", "bureaucracy", "waste", "authoritarian" (about Dems)
-Pejoratives: "socialist", "radical left", "leftist"
+RIGHT-WING LANGUAGE: "illegal aliens", "border crisis", "catch-and-release", "open borders", "sanctuary cities", "thugs", "law and order", "tough on crime", "criminal illegals", "job creators", "tax burden", "government overreach", "free market", "regulations killing jobs", "traditional values", "parental rights", "biological male/female", "unborn child", "woke", "legacy media", "mainstream media bias", "fake news", "big government", "bureaucracy", "waste", "authoritarian" (about Dems), "socialist", "radical left", "leftist".
 
-LEFT-WING LANGUAGE:
-Immigration: "undocumented immigrants", "migrants", "asylum seekers", "humanitarian crisis", "family separation"
-Crime: "over-policing", "mass incarceration", "police brutality", "systemic racism"
-Economics: "corporate greed", "wealth inequality", "living wage", "predatory capitalism", "billionaire class"
-Social: "reproductive rights", "gender-affirming care", "marginalized communities", "systemic inequality"
-Climate: "climate crisis", "fossil fuel industry", "climate deniers"
-Government: "voter suppression", "authoritarian" (about Trump), "fascist"
-Pejoratives: "right-wing extremist", "-baiting" (e.g., "immigrant-baiting"), "culture-warrior", "swivel-eyed", "grievance mining"
+LEFT-WING LANGUAGE: "undocumented immigrants", "migrants", "asylum seekers", "humanitarian crisis", "family separation", "over-policing", "mass incarceration", "police brutality", "systemic racism", "corporate greed", "wealth inequality", "living wage", "predatory capitalism", "billionaire class", "reproductive rights", "gender-affirming care", "marginalized communities", "systemic inequality", "climate crisis", "fossil fuel industry", "climate deniers", "voter suppression", "authoritarian" (about Trump), "fascist", "right-wing extremist", "-baiting", "culture-warrior", "swivel-eyed", "grievance mining".
 
-CRITICAL RULES:
-1. Copy phrases EXACTLY as they appear in article (with hyphens, quotes, capitalization)
-2. Extract the ACTUAL substring - no paraphrasing
-3. Include pejoratives, labels, loaded framing, and compound insults
-4. Look for "-baiting", "-warrior", "-ism/-ist", "grievance" constructions
-5. DO NOT invent phrases not in the text
-6. Find 3-5 phrases max
+RULES:
+1. Copy phrases EXACTLY from article.
+2. Max 5 phrases total.
+3. Include pejoratives, labels, loaded framing, compound insults, "-baiting", "-warrior", "-ism/-ist", "grievance".
+4. DO NOT invent phrases.
 
-Output ONLY this JSON (loaded_phrases: max 5):
+Output ONLY this exact JSON structure (loaded_phrases: max 5):
 {
   "loaded_phrases": [
     {
@@ -90,8 +72,8 @@ Output ONLY this JSON (loaded_phrases: max 5):
   "confidence": "High/Medium/Low"
 }
 
-If none: {"loaded_phrases": [], "overall_lean": "Neutral", "confidence": "High"}
-DO NOT wrap in code fences or markdown
+If none found: {"loaded_phrases": [], "overall_lean": "Neutral", "confidence": "High"}
+**ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
@@ -99,34 +81,24 @@ ${text.slice(0, 3000)}
 `,
 
   // ========== AGENT 3: HERO/VILLAIN DETECTOR ==========
-  // ONLY JOB: Who is portrayed as hero/villain?
-  createHeroVillainPrompt: (text) => `**Return only JSON. No markdown.**
+  createHeroVillainPrompt: (text) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are a HERO/VILLAIN DETECTOR. Identify if political figures are portrayed as heroes or villains.
+You are a HERO/VILLAIN DETECTOR. Identify if Trump, Biden, Democrats, or Republicans are portrayed positively (Hero) or negatively (Villain).
 
-HERO SIGNALS (positive portrayal):
-- Praised: "showed courage", "demonstrated leadership", "had the fortitude"
-- Success framing: "achieved", "delivered", "solved", "fixed"
-- Positive character traits: "principled", "tough", "effective", "honest"
-- Credit for good outcomes
+HERO SIGNALS: Praised ("courage", "leadership"), success framing ("achieved", "delivered"), positive traits ("principled", "effective").
+VILLAIN SIGNALS: Attacked ("failed", "weak", "corrupt"), blame framing ("caused", "allowed"), malicious intent ("disguised", "abused"), negative traits ("authoritarian", "reckless").
 
-VILLAIN SIGNALS (negative portrayal):
-- Attacked: "failed", "weak", "incompetent", "corrupt", "lying"
-- Blame for problems: "caused", "allowed", "enabled", "facilitated"
-- Malicious intent: "disguised", "pretended", "abused", "deceived"
-- Negative character traits: "authoritarian", "reckless", "divisive"
+RULES:
+- Check only: Trump, Biden, Democrats (party), Republicans (party).
+- Extract EXACT QUOTE as evidence. Max 4 portrayals total.
+- Determine pattern: Pro-Trump/Pro-Biden/Anti-Trump/Anti-Biden/Neutral.
+- Determine lean: Pro-T+Anti-B -> Right; Pro-B+Anti-T -> Left.
 
-KEY FIGURES TO CHECK:
-- Trump: Hero, Villain, or Neutral?
-- Biden: Hero, Villain, or Neutral?
-- Democrats (party): Hero, Villain, or Neutral?
-- Republicans (party): Hero, Villain, or Neutral?
-
-Output ONLY this JSON (portrayals: max 4):
+Output ONLY this exact JSON structure (portrayals: max 4):
 {
   "portrayals": [
     {
-      "figure": "Trump/Biden/Democrats/Republicans/Other",
+      "figure": "Trump/Biden/Democrats/Republicans",
       "portrayal": "Hero/Villain/Neutral",
       "evidence": "EXACT QUOTE from article showing this portrayal"
     }
@@ -136,9 +108,7 @@ Output ONLY this JSON (portrayals: max 4):
   "confidence": "High/Medium/Low"
 }
 
-CRITICAL: 
-- Pro-Trump + Anti-Biden → "Suggests Right"
-- Pro-Biden + Anti-Trump → "Suggests Left"
+**ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
@@ -146,24 +116,21 @@ ${text.slice(0, 3000)}
 `,
 
   // ========== AGENT 4: SOURCE BALANCE CHECKER ==========
-  // ONLY JOB: Count sources from each political side
-  createSourceBalancePrompt: (text) => `**Return only JSON. No markdown.**
+  createSourceBalancePrompt: (text) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are a SOURCE BALANCE CHECKER. Count how many sources favor each political side.
+You are a SOURCE BALANCE CHECKER. Count named sources favoring Left vs Right.
 
-IDENTIFY SOURCES:
-- Named individuals with quotes or attribution
-- Organizations cited
-- Studies/reports referenced
+SOURCES: Named individuals, cited organizations, referenced studies/reports.
+LEFT-LEANING: Democratic officials, liberal think tanks (e.g., CAP), progressive groups (ACLU, PP), unions, env groups.
+RIGHT-LEANING: Republican officials, conservative think tanks (e.g., Heritage), police unions, business groups, NRA.
+NEUTRAL: Academic researchers (apolitical), govt agencies, AP/Reuters, non-partisan orgs.
 
-CLASSIFY EACH SOURCE:
-LEFT-LEANING: Democratic officials, liberal think tanks, progressive groups, ACLU, Planned Parenthood, unions, environmental groups
-RIGHT-LEANING: Republican officials, conservative think tanks, Heritage Foundation, police unions, business groups, NRA
-NEUTRAL: Academic researchers (if apolitical), government agencies, AP/Reuters, non-partisan orgs
+RULES:
+- Count sources in each category.
+- List up to 8 sources with name, lean, and brief quote summary.
+- Verdict based on percentages: All one side -> "One-sided"; >70% one side -> "Favors"; 40-60% each -> "Balanced".
 
-Count sources in each category.
-
-Output ONLY this JSON (sources_listed: max 8):
+Output ONLY this exact JSON structure (sources_listed: max 8):
 {
   "source_count": {
     "left_leaning": NUMBER,
@@ -174,17 +141,14 @@ Output ONLY this JSON (sources_listed: max 8):
     {
       "name": "source name",
       "lean": "Left/Right/Neutral",
-      "quote_summary": "brief description"
+      "quote_summary": "brief description of what they said"
     }
   ],
   "balance_verdict": "Balanced/Favors Left/Favors Right/One-sided Left/One-sided Right",
   "confidence": "High/Medium/Low"
 }
 
-SCORING:
-- All from one side → "One-sided [Left/Right]"
-- >70% one side → "Favors [Left/Right]"
-- 40-60% each side → "Balanced"
+**ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
@@ -192,40 +156,36 @@ ${text.slice(0, 3000)}
 `,
 
   // ========== AGENT 5: FRAMING ANALYZER ==========
-  // ONLY JOB: How is the issue framed politically?
-  createFramingAnalyzerPrompt: (text) => `**Return only JSON. No markdown.**
+  createFramingAnalyzerPrompt: (text) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are a FRAMING ANALYZER. Identify if the issue is framed from a Left or Right perspective.
+You are a FRAMING ANALYZER. Identify if the issue's DOMINANT frame aligns with Left or Right perspectives.
 
-IMMIGRATION FRAMING:
-RIGHT: Security threat, law and order, border crisis, illegal activity, national sovereignty, enforcement
-LEFT: Humanitarian issue, asylum rights, family unity, compassion, systemic factors, reform
+IMMIGRATION: RIGHT (Security, Crisis, Illegal) vs LEFT (Humanitarian, Asylum, Systemic)
+ECONOMY: RIGHT (Individual, Free Market, Tax Burden) vs LEFT (Inequality, Corporate Power, Worker Rights)
+CRIME: RIGHT (Punishment, Law & Order, Tough) vs LEFT (Root Causes, Systemic, Reform)
+CLIMATE: RIGHT (Costs, Uncertainty, Energy Indep.) vs LEFT (Crisis, Urgent Action, Fossil Fuels)
 
-ECONOMIC FRAMING:
-RIGHT: Individual responsibility, free market, job creation, tax burden, deregulation, business freedom
-LEFT: Systemic inequality, corporate accountability, worker rights, regulation needed, collective solutions
+RULES:
+- Identify the main topic.
+- Determine the DOMINANT frame used.
+- Provide up to 3 specific examples of framing language from the article.
+- Assess overall lean suggested by framing.
 
-CRIME FRAMING:
-RIGHT: Punishment, deterrence, law and order, individual criminals, tough enforcement
-LEFT: Root causes, rehabilitation, systemic racism, over-incarceration, reform
-
-CLIMATE FRAMING:
-RIGHT: Economic costs, uncertainty, regulation burden, energy independence, gradual approach
-LEFT: Crisis, urgent action, fossil fuel accountability, environmental justice, bold action
-
-Identify the DOMINANT frame.
-
-Output ONLY this JSON (examples: max 3):
+Output ONLY this exact JSON structure (examples: max 3):
 {
   "topic": "Immigration/Economy/Crime/Climate/Healthcare/Other",
   "dominant_frame": "Right-wing/Left-wing/Neutral/Mixed",
-  "frame_description": "brief explanation of how issue is framed",
+  "frame_description": "brief explanation of how issue is framed (e.g., 'Focuses on border security failures')",
   "examples": [
-    "specific framing language from article"
+    "specific framing language 1",
+    "specific framing language 2",
+    "specific framing language 3"
   ],
   "political_lean": "Suggests Left/Suggests Right/Neutral",
   "confidence": "High/Medium/Low"
 }
+
+**ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
@@ -233,142 +193,101 @@ ${text.slice(0, 3000)}
 `,
 
   // ========== AGENT 6: COUNTERPOINT CHECKER ==========
-  // ONLY JOB: Are opposing views included?
-  createCounterpointCheckerPrompt: (text) => `**Return only JSON. No markdown.**
+  createCounterpointCheckerPrompt: (text) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are a COUNTERPOINT CHECKER. Determine if opposing political views are included.
+You are a COUNTERPOINT CHECKER. Determine if opposing political views are included and how they are treated.
 
 CHECK FOR:
-1. Are counterarguments present?
-2. Where do they appear? (Early, middle, or late in article)
-3. How much space given? (Substantial, brief mention, dismissive)
-4. How are they framed? (Fairly, mockingly, as strawman)
+1. Presence: Are counterarguments present? (true/false)
+2. Placement: Where? Early (0-50%), Late (50-100%), None.
+3. Treatment: How? Fair, Dismissive, Mocking, Strawman, None.
+4. Examples: List up to 3 specific counterpoints mentioned.
 
-GOOD BALANCE:
-- Counterarguments in first 50% of article
-- Given substantial space to explain position
-- Presented fairly without mockery
-- Best version of opposing argument
+RULES:
+- GOOD BALANCE = Early placement + Fair treatment.
+- POOR BALANCE = Late/None placement OR Dismissive/Mocking/Strawman treatment.
+- Determine overall balance verdict (Balanced, Somewhat Balanced, Imbalanced).
+- If Imbalanced, suggest which side the article leans towards based on presented views.
 
-POOR BALANCE:
-- Counterarguments only at end or absent
-- Brief mention or dismissive treatment
-- Mocked or presented as obviously wrong
-- Strawman version of opposing view
-
-Output ONLY this JSON (examples: max 3):
+Output ONLY this exact JSON structure (examples: max 3):
 {
   "counterpoints_present": true/false,
   "placement": "Early (0-50%)/Late (50-100%)/None",
   "treatment": "Fair/Dismissive/Mocking/Strawman/None",
   "examples": [
-    "specific counterpoint mentioned"
+    "specific counterpoint 1",
+    "specific counterpoint 2",
+    "specific counterpoint 3"
   ],
   "balance_verdict": "Balanced/Somewhat Balanced/Imbalanced",
   "suggests_lean": "Left/Right/Neither",
   "confidence": "High/Medium/Low"
 }
 
-CRITICAL:
-- No counterpoints → Imbalanced → Check which side is favored
-- Late/dismissive counterpoints → Imbalanced
+**ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
 ${text.slice(0, 3000)}
 </article_text>
 `,
 
-  // ========== AGENT 7: CONSENSUS MODERATOR ==========
-  // ONLY JOB: Synthesize all agent votes
-  createConsensusModerator: (agentResults) => `**Return structured markdown report. No code fences.**
+createConsensusModerator_JSON: (agentResultsJSON) => `**CRITICAL: Return ONLY valid JSON. No introductory text, no explanations outside JSON, no markdown code fences.**
 
-You are the CONSENSUS MODERATOR. Synthesize 6 specialist agent votes.
+You are the CONSENSUS MODERATOR (Judge). Synthesize the findings from 6 specialist agents provided as JSON input. Output a final structured JSON report.
 
-AGENT VOTES:
-${agentResults}
+AGENT FINDINGS (Input JSON):
+${agentResultsJSON} 
+// Note: In practice, sidepanel.js will stringify the collected JSON results here.
 
 CRITICAL DECISION PROCESS:
 
 1. CHECK CONTENT TYPE FIRST:
-   - If Opinion Detector says is_opinion=true → Rating = "Unclear" (STOP - skip all other analysis)
-   - If content_type="Interview" → Rating = "Unclear (Interview Format)" (STOP)
-   - Otherwise proceed to step 2
+   - If Opinion Detector says is_opinion=true OR content_type="Interview" → Final Rating = "Unclear". Structure the JSON accordingly, indicating the reason. STOP further bias analysis.
 
 2. COUNT POLITICAL DIRECTION VOTES:
-   Count how many agents indicate LEFT vs RIGHT:
-   
-   - Political Language: [Leans Left/Right/Neutral]
-   - Hero/Villain: [Suggests Left/Right/Neutral]
-   - Source Balance: [Favors Left/Right/Balanced]
-   - Framing: [Suggests Left/Right/Neutral]
-   - Counterpoints: [Suggests Left/Right/Neither]
+   - Tally LEFT vs RIGHT indicators from: Political Language (overall_lean), Hero/Villain (political_lean), Source Balance (balance_verdict), Framing (political_lean), Counterpoints (suggests_lean).
 
-3. DETERMINE DIRECTION:
-   - 4+ agents say LEFT → "Lean Left" or "Strong Left"
-   - 4+ agents say RIGHT → "Lean Right" or "Strong Right"
-   - 3 agents LEFT, 2 RIGHT → "Lean Left"
-   - 3 agents RIGHT, 2 LEFT → "Lean Right"
-   - Split 2-2 or all Neutral → "Center"
+3. DETERMINE OVERALL RATING & CONFIDENCE:
+   - Based on the vote count and the Counterpoint Checker's balance_verdict (imbalanced = strong signal), determine Overall Bias Assessment ('Center', 'Lean Left', 'Lean Right', 'Strong Left', 'Strong Right').
+   - Determine Confidence ('High', 'Medium', 'Low') based on agreement level and individual agent confidences.
 
-4. DETERMINE STRENGTH:
-   - Strong: 5+ agents agree + clear evidence
-   - Lean: 3-4 agents agree
-   - Center: <3 agree or all neutral
+4. EXTRACT KEY EVIDENCE:
+   - Select the 1-3 most significant Biased Phrases from the Political Language agent's 'loaded_phrases'.
+   - Select the 1-3 most significant Neutral Elements from the Counterpoint Checker ('examples' if fair/early) and Source Balance ('sources_listed' if balanced).
 
-5. COUNTERPOINTS LOGIC (CRITICAL):
-   - counterpoints_present=false AND balance_verdict="Imbalanced" → This is ONE-SIDED
-   - Absence of counterpoints = IMBALANCE, NOT neutrality
-   - Factor this into the final rating (one-sided content leans toward the presented side)
+5. FORMULATE KEY OBSERVATION:
+   - Write a concise (1-2 sentences) summary explaining the main factors driving the overall rating.
 
-Output format (keep under 400 words total):
+Output ONLY this exact JSON structure:
+{
+  "overall_bias_assessment": "Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear",
+  "confidence": "High | Medium | Low",
+  "key_observation": "1-2 sentence summary explaining the rating.",
+  "is_opinion_or_interview": true/false, // Added for clarity
+  "biased_language_examples": [ // Extracted from Political Language Agent
+    {
+      "phrase": "exact phrase",
+      "explanation": "why biased",
+      "direction": "Left/Right" 
+    } 
+    // Max 3 examples
+  ],
+  "neutral_elements_examples": [ // Extracted from Counterpoint/Source Balance Agents
+    {
+      "type": "Counterpoint/Source Balance/Framing", // Indicate origin
+      "description": "Description of the element (e.g., 'Fair counterpoint presented early', 'Balanced sources cited')"
+    }
+    // Max 3 examples
+  ],
+  "agent_vote_summary": { // Optional: for debugging/transparency
+     "political_language": "Left/Right/Neutral",
+     "hero_villain": "Left/Right/Neutral",
+     "source_balance": "Left/Right/Balanced",
+     "framing": "Left/Right/Neutral",
+     "counterpoints_balance": "Balanced/Imbalanced/NA"
+  }
+}
 
-### Findings
-- **Overall Bias Assessment:** [Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear | Unclear (Interview Format)]
-- **Confidence:** [High | Medium | Low]
-- **Key Observation:** [2-3 sentences explaining consensus from agents. Be specific: "X agents detected [Left/Right] indicators including [examples]"]
-
-### Biased Languages Used
-[CRITICAL: Use ONLY the loaded_phrases array from Political Language agent. DO NOT invent phrases.]
-[If loaded_phrases has items:]
-- **"[exact phrase from agent]"**: [explanation from agent]. Direction: *[Left/Right]*
-[List ALL phrases from loaded_phrases array, max 5]
-
-[If loaded_phrases is empty:]
-- No significant biased or politically charged language detected in the narrative.
-
-### Neutral Languages Used
-[If sources are balanced from Source Balance agent:]
-- **Source Diversity**: [Describe source balance - e.g., "Includes X left-leaning, Y right-leaning, Z neutral sources"]
-
-[If counterpoints present from Counterpoints agent:]
-- **Counterarguments Included**: [Describe placement and treatment - e.g., "Opposition views presented in first half with fair treatment"]
-
-[CRITICAL: If counterpoints_present=false, DO NOT list this as neutral - it's an imbalance signal]
-
-[If framing is neutral:]
-- **Neutral Framing**: [Describe how the issue is framed without political bias]
-
-[If minimal balance:]
-- Limited balanced elements detected. [Brief explanation of what's missing]
-
-### Methodology Note
-**Agent Vote Breakdown:**
-- Political Language: [Left/Right/Neutral]
-- Hero/Villain Portrayal: [Left/Right/Neutral]  
-- Source Balance: [Favors Left/Favors Right/Balanced]
-- Issue Framing: [Left/Right/Neutral]
-- Counterpoints: [Present/Absent] → Balance: [Balanced/Imbalanced]
-
-**CONSENSUS:** [X] out of 5 agents indicate [Left/Right] lean → Rating: [Final Rating]
-
-Multi-agent analysis: 6 specialized agents evaluated political indicators independently. [1 sentence on how votes led to consensus rating]. [If counterpoints absent: "Note: Absence of opposing viewpoints contributed to one-sided assessment."]
-
-CRITICAL REQUIREMENTS:
-1. For Opinion/Interview content, output ONLY "Unclear" or "Unclear (Interview Format)" - do NOT proceed with bias analysis
-2. NEVER invent phrases not in loaded_phrases array
-3. Absence of counterpoints = imbalance signal, not neutrality indicator
-4. Trust the structured data from agents, not just their text verdicts
-5. DO NOT wrap output in code fences or markdown blocks
-6. Use ONLY data provided by agents - no hallucination
+**ABSOLUTELY NO extra text outside the JSON object.**
 `
 };

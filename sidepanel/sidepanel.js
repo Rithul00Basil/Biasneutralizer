@@ -1451,7 +1451,7 @@ ${contentType} content is evaluated differently than news reporting and does not
       
       // AGENT 7: Consensus Moderator (synthesizes all votes)
       spLog('Agent 7: Consensus Moderator - Synthesizing votes');
-      const moderatorPrompt = OnDevicePrompts.createConsensusModerator(agentResults);
+      const moderatorPrompt = OnDevicePrompts.createConsensusModerator_JSON(agentResults);
       const finalReportMarkdown = await session.prompt(moderatorPrompt);
       
       // allLoadedPhrases already computed and verified above
@@ -1482,6 +1482,15 @@ ${contentType} content is evaluated differently than news reporting and does not
           sources: sourceJSON.balance_verdict,
           framing: framingJSON.political_lean,
           counterpoints: counterpointJSON.suggests_lean
+        },
+        // Full agent responses for assistant context
+        fullAgentData: {
+          opinion: opinionJSON,
+          political: politicalJSON,
+          heroVillain: heroJSON,
+          sources: sourceJSON,
+          framing: framingJSON,
+          counterpoints: counterpointJSON
         }
       };
 
