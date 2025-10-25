@@ -254,11 +254,13 @@ function injectHighlightStyles() {
       padding: 12px;
       margin-top: 16px;
       display: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
     }
 
     .popup-neutral-result.visible {
       display: block;
-      animation: slideDown 0.3s ease;
+      opacity: 1;
     }
 
     @keyframes slideDown {
@@ -312,6 +314,14 @@ function injectHighlightStyles() {
       transform: translateY(-1px);
     }
 
+    .popup-btn-primary.popup-btn-success {
+      background: #10B981;
+    }
+
+    .popup-btn-primary.popup-btn-success:hover:not(:disabled) {
+      background: #059669;
+    }
+
     .popup-btn-secondary {
       background: rgba(255, 255, 255, 0.08);
       color: rgba(255, 255, 255, 0.9);
@@ -319,6 +329,11 @@ function injectHighlightStyles() {
 
     .popup-btn-secondary:hover:not(:disabled) {
       background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Smooth transitions for explanation section */
+    .popup-explanation-section {
+      transition: opacity 0.3s ease, max-height 0.3s ease;
     }
 
     /* Neutral popup - minimal tooltip style */
@@ -1280,24 +1295,30 @@ function showBiasedPopup(highlightElement) {
   const popup = document.createElement('div');
   popup.className = 'neutralizer-popup';
 
-  // Clean minimal design matching app theme
+  // Initial state: Show ONLY original phrase, explanation, and buttons
+  // NO pre-analyzed alternative shown
   popup.innerHTML = `
     <div class="popup-header">
       <div class="popup-title">Biased Language</div>
       <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
     </div>
-    <div class="popup-body">
-      <div class="popup-label">Why This Is Biased</div>
-      <div class="popup-explanation">${escapeHtml(explanation || 'Loaded language detected')}</div>
-      
-      <div class="popup-neutral-result" id="neutral-result">
+    <div class="popup-body" id="popup-body">
+      <div class="popup-explanation-section" id="explanation-section">
+        <div class="popup-label">Why This Is Biased</div>
+        <div class="popup-explanation">${escapeHtml(explanation || 'Loaded language detected')}</div>
+      </div>
+
+      <!-- Hidden initially, will fade in smoothly when neutralize is clicked -->
+      <div class="popup-neutral-result" id="neutral-result" style="display: none;">
         <div class="popup-label">Neutralized Version</div>
         <div class="popup-neutral-text" id="neutral-text"></div>
       </div>
     </div>
     <div class="popup-actions">
       <button class="popup-btn popup-btn-secondary" id="learn-more-btn">Learn More</button>
-      <button class="popup-btn popup-btn-primary" id="neutralize-btn">Neutralize</button>
+      <button class="popup-btn popup-btn-primary" id="neutralize-btn">
+        <span id="btn-text">Neutralize</span>
+      </button>
     </div>
   `;
 
@@ -1314,24 +1335,48 @@ function showBiasedPopup(highlightElement) {
   });
 
   currentPopup = popup;
-  contentLog('Biased popup shown');
+  contentLog('Biased popup shown (no pre-analyzed alternative displayed)');
 }
 
 /**
- * Neutralize text and show result in popup
+ * Neutralize text and show result in popup with smooth transitions
  */
 async function handleNeutralizeInPopup(originalText, explanation, popup, suggestedAlternative) {
   contentLog('Neutralizing:', originalText);
 
   const neutralBtn = popup.querySelector('#neutralize-btn');
+  const btnText = popup.querySelector('#btn-text');
+  const explanationSection = popup.querySelector('#explanation-section');
   const neutralSection = popup.querySelector('#neutral-result');
   const neutralTextEl = popup.querySelector('#neutral-text');
 
-  // Show loading state
+  // SMOOTH TRANSITION: Fade out explanation, then fade in neutralized section
   neutralBtn.disabled = true;
-  neutralBtn.textContent = 'Neutralizing...';
-  neutralSection.classList.add('visible');
-  neutralTextEl.innerHTML = '<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+
+  // Update button with spinner
+  btnText.innerHTML = '<span class="btn-spinner"></span>Processing...';
+
+  // Smoothly fade out explanation
+  explanationSection.style.transition = 'opacity 0.3s ease, max-height 0.3s ease';
+  explanationSection.style.opacity = '0';
+  explanationSection.style.maxHeight = '0';
+  explanationSection.style.overflow = 'hidden';
+
+  // Wait for fade out, then show neutral section
+  setTimeout(() => {
+    explanationSection.style.display = 'none';
+    neutralSection.style.display = 'block';
+    neutralSection.style.opacity = '0';
+    neutralSection.style.transition = 'opacity 0.3s ease';
+
+    // Show typing dots loading indicator
+    neutralTextEl.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+
+    // Trigger fade in
+    requestAnimationFrame(() => {
+      neutralSection.style.opacity = '1';
+    });
+  }, 300);
 
   try {
     // Check API support
@@ -1339,7 +1384,7 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
       throw new Error('REWRITER_NOT_SUPPORTED');
     }
 
-    const availability = await Rewriter.availability();
+    const availability = await self.Rewriter.availability();
     contentLog('Rewriter availability:', availability);
 
     if (availability === 'no') {
@@ -1347,11 +1392,11 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
     }
 
     if (availability === 'after-download') {
-      neutralTextEl.innerHTML = '<div style="font-size: 12px;">Downloading AI model (22GB)...<br>This will take 10-30 minutes</div>';
+      neutralTextEl.innerHTML = '<div style="font-size: 12px; color: rgba(255, 255, 255, 0.9);">Downloading AI model (22GB)...<br><span style="opacity: 0.7;">This will take 10-30 minutes</span></div>';
     }
 
     // Create rewriter
-    const rewriter = await Rewriter.create({
+    const rewriter = await self.Rewriter.create({
       sharedContext: `Rewrite biased language from news articles into neutral alternatives. Remove emotional language while preserving facts.`,
       tone: 'as-is',
       format: 'plain-text',
@@ -1359,14 +1404,14 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
       monitor(m) {
         m.addEventListener('downloadprogress', (e) => {
           const percent = Math.round(e.loaded * 100);
-          neutralTextEl.innerHTML = `<div style="font-size: 12px;">Downloading: ${percent}%<br>Please keep this tab open</div>`;
+          neutralTextEl.innerHTML = `<div style="font-size: 12px; color: rgba(255, 255, 255, 0.9);">Downloading: ${percent}%<br><span style="opacity: 0.7;">Please keep this tab open</span></div>`;
         });
       }
     });
 
     currentRewriterSession = rewriter;
 
-    // Stream the neutral version
+    // Stream the neutral version with cursor effect
     neutralTextEl.classList.add('streaming');
     neutralTextEl.textContent = '';
 
@@ -1377,38 +1422,47 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
     let fullText = '';
     for await (const chunk of stream) {
       fullText = chunk;
-      neutralTextEl.textContent = `"${fullText}"`;
+      // Display without quotes for cleaner look, streaming cursor is added by CSS
+      neutralTextEl.textContent = fullText;
     }
 
+    // Remove streaming cursor when complete
     neutralTextEl.classList.remove('streaming');
 
-    // Update button
-    neutralBtn.textContent = 'Done';
+    // Add quotes for final display
+    neutralTextEl.textContent = `"${fullText}"`;
+
+    // Update button to "Done" state
+    btnText.textContent = 'Done ✓';
+    neutralBtn.classList.add('popup-btn-success');
     neutralBtn.disabled = true;
 
-    contentLog('Neutralization complete');
+    contentLog('Neutralization complete:', fullText);
 
   } catch (error) {
     contentError('Neutralization failed:', error);
-    
+
+    // Show error in the neutral section
     if (error.message === 'REWRITER_NOT_SUPPORTED') {
       neutralTextEl.innerHTML = `
-        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">On-device AI not available</div>
-        ${suggestedAlternative ? `<div>"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested by analysis</div>` : '<div style="opacity: 0.7; font-size: 12px;">Try Cloud AI mode in settings</div>'}
+        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">⚠️ On-device AI not available</div>
+        ${suggestedAlternative ? `<div style="margin-top: 8px; color: rgba(255, 255, 255, 0.9);">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Pre-analyzed alternative</div>` : '<div style="opacity: 0.7; font-size: 12px;">Please use a compatible browser</div>'}
       `;
     } else if (error.message === 'MODEL_NOT_AVAILABLE') {
       neutralTextEl.innerHTML = `
-        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">Device doesn't support on-device AI</div>
-        ${suggestedAlternative ? `<div style="margin-top: 8px;">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested alternative</div>` : ''}
+        <div style="color: #FFA500; font-size: 12px; margin-bottom: 8px;">⚠️ Device doesn't support on-device AI</div>
+        ${suggestedAlternative ? `<div style="margin-top: 8px; color: rgba(255, 255, 255, 0.9);">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Pre-analyzed alternative</div>` : ''}
       `;
     } else {
       neutralTextEl.innerHTML = `
-        <div style="color: #EF4444; font-size: 12px;">Error: ${escapeHtml(error.message)}</div>
-        ${suggestedAlternative ? `<div style="margin-top: 8px;">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Suggested alternative</div>` : ''}
+        <div style="color: #EF4444; font-size: 12px; margin-bottom: 8px;">❌ Error: ${escapeHtml(error.message)}</div>
+        ${suggestedAlternative ? `<div style="margin-top: 8px; color: rgba(255, 255, 255, 0.9);">"${escapeHtml(suggestedAlternative)}"</div><div style="font-size: 11px; opacity: 0.6; margin-top: 4px;">Pre-analyzed alternative</div>` : ''}
       `;
     }
 
-    neutralBtn.textContent = 'Try Again';
+    // Reset button to allow retry
+    btnText.textContent = 'Try Again';
+    neutralBtn.classList.remove('popup-btn-success');
     neutralBtn.disabled = false;
   }
 }
@@ -1426,7 +1480,7 @@ function showNeutralPopup(highlightElement) {
 
   popup.innerHTML = `
     <div class="popup-header">
-      <div class="popup-title">Neutral Language</div>
+      <div class="popup-title">✓ Neutral Language</div>
     </div>
     <div class="popup-body">
       <div class="popup-phrase">"${escapeHtml(originalPhrase)}"</div>
@@ -1445,15 +1499,11 @@ function showNeutralPopup(highlightElement) {
     handleKnowMore();
   });
 
-  // Auto-dismiss after 4 seconds
-  setTimeout(() => {
-    if (currentPopup === popup) {
-      closePopup();
-    }
-  }, 4000);
+  // NO AUTO-DISMISS: Popup remains visible until user clicks outside or presses a button
+  // User can now read the explanation at their own pace
 
   currentPopup = popup;
-  contentLog('Neutral popup shown');
+  contentLog('Neutral popup shown (no auto-dismiss)');
 }
 
 function positionPopup(popup, targetElement) {
