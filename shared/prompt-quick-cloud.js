@@ -1,4 +1,6 @@
- 
+// Quick Mode Cloud AI Prompts
+// Optimized for speed: 10 agents (excludes Source Diversity, Framing, and Omission)
+// Use this for fast bias detection with tribunal architecture
 
 export const AgentPrompts = {
   // ---------- 1) CONTEXT ----------
@@ -272,110 +274,7 @@ ${textToAnalyze}
 </article_text>
 `,
 
-  // ---------- 6) SOURCE DIVERSITY (Deep Mode) ----------
-  createSourceDiversityPrompt: (textToAnalyze) => `
-**Return only a JSON object. No prose and no Markdown/code fences.**
-
-Analyze source diversity. Good journalism includes varied perspectives.
-
-Count and categorize:
-- Officials vs. citizens
-- Institutional vs. individual
-- Different viewpoints represented
-- Geographic diversity if relevant
-- Demographic representation when apparent
-
-IMPORTANT: Lack of perfect diversity doesn't equal bias. Context matters.
-
-Output ONLY this JSON:
-{
-  "sources_by_type": {
-    "official": NUMBER,
-    "expert": NUMBER,
-    "citizen": NUMBER,
-    "organization": NUMBER
-  },
-  "viewpoint_distribution": {
-    "perspective_a": NUMBER,
-    "perspective_b": NUMBER,
-    "neutral_expert": NUMBER
-  },
-  "missing_voices": ["groups that might add value but aren't extreme oversight"],
-  "assessment": "Good/Adequate/Limited diversity"
-}
-
-<article_text>
-${textToAnalyze}
-</article_text>
-`,
-
-  // ---------- 7) FRAMING (Deep Mode) ----------
-  createFramingPrompt: (textToAnalyze) => `
-**Return only a JSON object. No prose and no Markdown/code fences.**
-
-Analyze article structure and framing. Standard news structure is NOT bias.
-
-Check:
-- Headline accuracy vs. body
-- Lead paragraph focus
-- Where counterpoints appear
-- Information hierarchy
-
-REMEMBER:
-- Inverted pyramid (important first) is standard journalism
-- Breaking news often lacks full context initially
-- Headlines must be concise (some nuance lost is normal)
-
-Output ONLY this JSON:
-{
-  "headline_body_alignment": "Aligned/Minor differences/Significant mismatch",
-  "lead_focus": "description of opening emphasis",
-  "counterpoint_placement": "Early (first 30%)/Middle (30-70%)/Late (70%+)/None",
-  "structural_concerns": ["only SIGNIFICANT issues"],
-  "assessment": "Standard structure/Minor issues/Structural bias"
-}
-
-<article_text>
-${textToAnalyze}
-</article_text>
-`,
-
-  // ---------- 8) OMISSION (Deep Mode) ----------
-  createOmissionPrompt: (contextData, textToAnalyze) => `
-**Return only a JSON object. No prose and no Markdown/code fences.**
-
-Context: ${contextData}
-
-Identify potentially missing context. Be reasonable - not every article can cover everything.
-
-Consider:
-- Is critical context missing that would change interpretation?
-- Are there standard counterarguments not mentioned?
-- Is relevant data omitted while other data is included?
-
-AVOID NITPICKING:
-- Articles have word limits
-- Not every perspective needs inclusion
-- Focus on SIGNIFICANT omissions only
-
-Output ONLY this JSON:
-{
-  "missing_context": [
-    {
-      "what": "brief description",
-      "why_relevant": "why this specific context matters",
-      "impact": "Low/Medium/High"
-    }
-  ],
-  "assessment": "Complete/Adequate/Significant omissions"
-}
-
-<article_text>
-${textToAnalyze}
-</article_text>
-`,
-
-  // ---------- 9) PROSECUTOR (More Balanced) ----------
+  // ---------- 6) PROSECUTOR ----------
   createProsecutorPrompt: (contextData, languageJSON, hunterJSON, skepticJSON, quoteJSON) => `
 **Return only a JSON object. No prose and no Markdown/code fences.**
 
@@ -455,7 +354,7 @@ If evidence insufficient for charges:
 </output_format>
 `,
 
-  // ---------- 10) DEFENSE (Unchanged) ----------
+  // ---------- 7) DEFENSE ----------
   createDefensePrompt: (prosecutorJSON, contextData, languageJSON, hunterJSON, skepticJSON, quoteJSON) => `
 **Return only a JSON object. No prose and no Markdown/code fences.**
 
@@ -515,7 +414,7 @@ DEFENSIVE STRATEGIES:
 </output_format>
 `,
 
-  // ---------- 11) INVESTIGATOR (Unchanged) ----------
+  // ---------- 8) INVESTIGATOR ----------
   createInvestigatorPrompt: (prosecutorJSON, articleText) => `
 **Return only a JSON object. No prose and no Markdown/code fences.**
 
@@ -577,7 +476,7 @@ For structural claims, provide measurements:
 </output_format>
 `,
 
-  // ---------- 12) JUDGE (More Balanced) ----------
+  // ---------- 9) JUDGE ----------
   createJudgePrompt: (prosecutorJSON, defenseJSON, investigatorJSON, contextData) => `
 **Return only a structured markdown report. No JSON.**
 
@@ -667,7 +566,7 @@ CONFIDENCE LEVELS:
 REMEMBER: Most professional journalism should rate "Center" unless clear evidence exists otherwise.
 `,
 
-  // Keep skeleton extractor as is - it's just for structure
+  // ---------- 10) SKELETON EXTRACTOR ----------
   createSkeletonExtractorPrompt: (articleText) => `
 You are a structural analyst extracting the article's semantic skeleton.
 

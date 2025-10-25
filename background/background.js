@@ -7,6 +7,7 @@
  */
 
 import { AgentPrompts } from '../shared/prompts.js';
+import { AgentPrompts as QuickPrompts } from '../shared/prompt-quick-cloud.js';
 
 const BG_LOG_PREFIX = '[Background]';
 const bgLog = (...args) => console.log(BG_LOG_PREFIX, ...args);
@@ -1188,6 +1189,10 @@ async function ensureBalancedExamples(elements, sourceText, requestSnippet) {
 
 async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal) {
 
+  // Select appropriate prompt module based on analysis depth
+  const Prompts = analysisDepth === 'deep' ? AgentPrompts : QuickPrompts;
+  bgLog(`Using ${analysisDepth} mode prompts from ${analysisDepth === 'deep' ? 'prompts.js' : 'prompt-quick-cloud.js'}`);
+
   let thinkingBudget;
 
   if (analysisDepth === 'deep') {
@@ -1210,67 +1215,7 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   bgLog('Agent 1: Context analysis...');
 
-  /*
-
-  const contextPrompt = `You are a neutral classifier. Do NOT assume bias exists.
-
-Task: Classify genre and extract context. If uncertain, use "Unknown" rather than guessing.
-
-Definitions:
-
-- News: Timely reporting, minimal opinion
-
-- Opinion: Explicit viewpoint/commentary (op-ed, column, editorial, first-person)
-
-- Analysis: Explains significance with interpretation, not straight reporting
-
-- Satire: Humor/irony, not literal
-
-- Academic: Scholarly, citations, formal
-
-- Other: Specify if none fit (e.g., press release, police report, dataset page)
-
-Rules:
-
-- Do not judge ideology or search for bias
-
-- Detect opinion/analysis markers in headers/bylines (e.g., "Opinion", "Analysis", "Column")
-
-- Identify official data releases (govt/police/statistical bulletins) as "Other: Official data release"
-
-- Estimate quoted material: count approximate word percentage inside quotation marks
-
-  • Low = 0-30%, Medium = 31-60%, High = 61-100%
-
-Output ONLY this JSON (no other text):
-
-{
-
-  "type": "News/Opinion/Analysis/Satire/Academic/Other/Unknown",
-
-  "is_opinion_or_analysis": true/false,
-
-  "subtype": "e.g., Official data release/Press release/Column/Editorial/None",
-
-  "summary": "EXACTLY TEN WORDS describing main topic",
-
-  "tone": "Neutral/Emotional/Analytical/Mixed",
-
-  "quote_ratio": "Low/Medium/High",
-
-  "quote_percentage": NUMBER_0_TO_100,
-
-  "confidence": "High/Medium/Low"
-
-}
-
-ARTICLE TEXT:
-
-  ${textToAnalyze}`;
-
-  */
-
-  const contextPrompt = AgentPrompts.createContextPrompt(textToAnalyze);
+  const contextPrompt = Prompts.createContextPrompt(textToAnalyze);
 
   const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'context' });
 
@@ -1294,245 +1239,15 @@ ARTICLE TEXT:
 
   bgLog('Agents 2-4: Language, Bias, and Skeptic analysis...');
 
-  /*
+  const languagePrompt = Prompts.createLanguagePrompt(contextData, textToAnalyze);
 
-  const languagePrompt = `Context: ${contextData}
+  const hunterPrompt = Prompts.createHunterPrompt(contextData, textToAnalyze);
 
-Analyze ONLY reporter's narrative (exclude all quoted text).
-
-Flag phrases ONLY if ALL are true:
-
-1. Value-laden (judgmental adjectives/adverbs, insinuating verbs, speculative hedges)
-
-2. A neutral, precise alternative exists
-
-3. The phrase is NOT a factual statistic, measurement, count, date, quote attribution, or data-backed descriptor
-
-Do NOT flag:
-
-- Precise technical/legal terms ("felony", "GDP contracted")
-
-- Numbers/percentages/rates, time trends, or sourced findings (e.g., "22% decrease" with source)
-
-- Headlines/quotes content; treat quoted loaded terms as source bias
-
-Require: Provide neutral alternative for each flagged phrase
-
-Output ONLY this JSON:
-
-{
-
-  "loaded_phrases": [
-
-    {
-
-      "phrase": "exact narrative phrase",
-
-      "explanation": "why loaded vs neutral alternative",
-
-      "neutral_alternative": "plainer wording",
-
-      "context_snippet": "30-60 chars surrounding"
-
-    }
-
-  ],
-
-  "neutrality_score": NUMBER_0_TO_10,
-
-  "confidence": "High/Medium/Low",
-
-  "summary": "one sentence assessment"
-
-}
-
-If none: {"loaded_phrases": [], "neutrality_score": 10, "confidence": "High", "summary": "Language is fact-based and neutral."}
-
-TEXT:
-
-${textToAnalyze}`;
-
-  */
-
-  const languagePrompt = AgentPrompts.createLanguagePrompt(contextData, textToAnalyze);
-
-  /*
-
-  const hunterPrompt = `Context: ${contextData}
-
-Find bias indicators in NARRATIVE ONLY (ignore quotes). Do NOT assume bias exists.
-
-Flag ONLY if falsifiable criteria met:
-
-- Selective framing: Relevant counter-info buried (after para 8) while opposing view leads
-
-- Unbalanced sourcing: >70% of attributions favor one side without comparable scrutiny
-
-- Loaded descriptors: Narrative uses judgmental language without factual basis
-
-- Causality leap: Claims causation without evidence (correlation presented as causation)
-
-- Editorial insertion: Adjectives judging motives/morality
-
-Thresholds:
-
-- Need ≥2 INDEPENDENT indicators (different types/sources) OR
-
-- 1 High-strength indicator corroborated by story structure (headline/lead/positioning)
-
-Output ONLY this JSON:
-
-{
-
-  "bias_indicators": [
-
-    {
-
-      "type": "Framing/Sourcing/Language/Causality/Editorial",
-
-      "example": "exact phrase or structural description",
-
-      "explanation": "why this meets criteria above",
-
-      "strength": "Low/Medium/High"
-
-    }
-
-  ],
-
-  "overall_bias": "Strong Left/Lean Left/Center/Lean Right/Strong Right/Unclear",
-
-  "confidence": "High/Medium/Low",
-
-  "evidence_notes": "brief location/paragraph references"
-
-}
-
-Default to "Center" or "Unclear" if evidence insufficient.
-
-TEXT:
-
-${textToAnalyze}`;
-
-  */
-
-  const hunterPrompt = AgentPrompts.createHunterPrompt(contextData, textToAnalyze);
-
-  /*
-
-  const skepticPrompt = `Context: ${contextData}
-
-Identify genuine balance/quality signals. Do NOT manufacture symmetry or require false balance.
-
-Credit as balanced ONLY if:
-
-- Opposing perspectives are credibly sourced AND proportionate to claim importance
-
-- Transparently communicates uncertainty/limitations
-
-- Strong, checkable attribution provided
-
-- Relevant context (history, data, scope) included
-
-- Acknowledges complexity without oversimplifying
-
-Do NOT require "both sides" if one lacks credible support (e.g., scientific consensus)
-
-Output ONLY this JSON:
-
-{
-
-  "balanced_elements": [
-
-    {
-
-      "type": "Sourcing/Attribution/Context/Nuance/Transparency",
-
-      "example": "exact text or description",
-
-      "explanation": "why this demonstrates quality journalism"
-
-    }
-
-  ],
-
-  "balance_score": NUMBER_0_TO_10,
-
-  "confidence": "High/Medium/Low",
-
-  "strengths": "one sentence on journalistic strengths"
-
-}
-
-If none: {"balanced_elements": [], "balance_score": 0, "confidence": "High", "strengths": "No notable balanced elements found."}
-
-TEXT:
-
-${textToAnalyze}`;
-
-  */
-
-  const skepticPrompt = AgentPrompts.createSkepticPrompt(contextData, textToAnalyze);
+  const skepticPrompt = Prompts.createSkepticPrompt(contextData, textToAnalyze);
 
   // Quote Agent: extract direct quotes for weighting
 
-  /*
-
-  const quotePrompt = `Context: ${contextData}
-
-Extract ONLY direct quotes. Do NOT infer article bias from quoted content.
-
-Rules:
-
-- Include: Text in quotation marks OR explicitly attributed verbatim speech
-
-- Exclude: Paraphrases, summaries, indirect speech
-
-- Assess: How the article frames each quote (attribution style)
-
-- Note: Loaded language in quotes reflects SOURCE bias, not article bias
-
-Also compute the share of quotes that contain loaded terms.
-
-Output ONLY this JSON:
-
-{
-
-  "quotes": [
-
-    {
-
-      "text": "exact quoted text",
-
-      "speaker": "name or Unknown",
-
-      "source_bias_cues": ["loaded terms within quote if any"],
-
-      "article_attribution": "Neutral/Endorsing/Skeptical/Balancing",
-
-      "is_countered": true/false
-
-    }
-
-  ],
-
-  "quotes_with_loaded_terms": NUMBER_OF_QUOTES_WITH_LOADED_TERMS,
-
-  "total_quotes": TOTAL_NUMBER_OF_QUOTES,
-
-  "confidence": "High/Medium/Low"
-
-}
-
-If no quotes: {"quotes": [], "quotes_with_loaded_terms": 0, "total_quotes": 0, "confidence": "High"}
-
-TEXT:
-
-${textToAnalyze}`;
-
-  */
-
-  const quotePrompt = AgentPrompts.createQuotePrompt(contextData, textToAnalyze);
+  const quotePrompt = Prompts.createQuotePrompt(contextData, textToAnalyze);
 
   // Deep mode: Add 3 specialized agents for comprehensive analysis
 
@@ -1546,179 +1261,9 @@ ${textToAnalyze}`;
 
     bgLog('Deep mode: Activating specialized agents');
 
-    /*
+    sourceDiversityPrompt = AgentPrompts.createSourceDiversityPrompt(textToAnalyze);
 
-    sourceDiversityPrompt = `Context: ${contextData}
-
-Analyze who gets to speak. Account for story context—not all stories need partisan balance.
-
-Context rule: If topic is non-adversarial (e.g., natural disaster, science consensus), political balance may be "Not Applicable"
-
-Classify sources:
-
-- official (gov/corp/institution)
-
-- expert (academia/research)
-
-- stakeholder (affected community)
-
-- advocacy (NGO/activist)
-
-- partisan_left/partisan_right
-
-- other
-
-Output ONLY this JSON:
-
-{
-
-  "source_breakdown": {
-
-    "official": NUMBER,
-
-    "expert": NUMBER,
-
-    "stakeholder": NUMBER,
-
-    "advocacy": NUMBER,
-
-    "partisan_left": NUMBER,
-
-    "partisan_right": NUMBER,
-
-    "other": NUMBER
-
-  },
-
-  "context_applicability": "Adversarial/Non-Adversarial/Unknown",
-
-  "gender_representation": "Balanced/Male-dominated/Female-dominated/Unknown",
-
-  "positioning": "who appears in lead/close",
-
-  "missing_voices": ["perspectives reasonably relevant but absent"],
-
-  "diversity_score": NUMBER_0_TO_10,
-
-  "confidence": "High/Medium/Low",
-
-  "assessment": "one sentence"
-
-}
-
-List missing_voices ONLY if reasonably relevant given story type.
-
-TEXT:
-
-${textToAnalyze}`;
-
-    */
-
-    sourceDiversityPrompt = AgentPrompts.createSourceDiversityPrompt(contextData, textToAnalyze);
-
-    /*
-
-    framingPrompt = `Context: ${contextData}
-
-Examine story structure. Distinguish editorial judgment from manipulation.
-
-Flag as manipulation ONLY if:
-
-- Headline contradicts body content
-
-- Lead omits essential counter-facts acknowledged later
-
-- Passive voice systematically obscures agents in contested actions
-
-- Causal claims in headline/lead lack support
-
-Do NOT flag standard inverted pyramid (leading with news hook)
-
-Output ONLY this JSON:
-
-{
-
-  "headline_analysis": {
-
-    "tone": "Neutral/Sensational/Misleading/Balanced",
-
-    "matches_content": true/false,
-
-    "explanation": "brief rationale"
-
-  },
-
-  "lead_focus": "what first 3 paragraphs emphasize",
-
-  "buried_information": ["important facts placed after para 5"],
-
-  "voice_patterns": {
-
-    "active_subjects": ["actors named"],
-
-    "passive_obscured": ["agents obscured inappropriately"]
-
-  },
-
-  "manipulation_flags": ["specific reasons if criteria met"],
-
-  "framing_score": NUMBER_0_TO_10,
-
-  "confidence": "High/Medium/Low",
-
-  "assessment": "one sentence"
-
-}
-
-TEXT:
-
-${textToAnalyze}`;
-
-    */
-
-    framingPrompt = AgentPrompts.createFramingPrompt(contextData, textToAnalyze);
-
-    /*
-
-    omissionPrompt = `Context: ${contextData}
-
-Identify omissions ONLY if reasonably expected for story type and length.
-
-Reasonable-to-include test (ALL must be true):
-
-1. Commonly included by competent beat reporting
-
-2. Feasible within typical article length OR materially changes interpretation
-
-3. Publicly available or already alluded to in piece
-
-Output ONLY this JSON:
-
-{
-
-  "missing_context": ["specific items passing test"],
-
-  "unaddressed_counterarguments": ["credible opposing points relevant to claims"],
-
-  "missing_data": ["key stats/datasets typically cited"],
-
-  "unanswered_questions": ["obvious questions raised by piece"],
-
-  "omission_severity": "None/Low/Medium/High",
-
-  "confidence": "High/Medium/Low",
-
-  "assessment": "one sentence"
-
-}
-
-If nothing passes test: {"missing_context": [], "unaddressed_counterarguments": [], "missing_data": [], "unanswered_questions": [], "omission_severity": "None", "confidence": "High", "assessment": "Comprehensive within scope."}
-
-TEXT:
-
-    ${textToAnalyze}`;
-
-    */
+    framingPrompt = AgentPrompts.createFramingPrompt(textToAnalyze);
 
     omissionPrompt = AgentPrompts.createOmissionPrompt(contextData, textToAnalyze);
 
@@ -1748,7 +1293,7 @@ TEXT:
       skepticJSON.balanced_elements,
       textToAnalyze,
       async (element) => {
-        const snippetPrompt = AgentPrompts.createBalancedSnippetPrompt(contextData, textToAnalyze, element);
+        const snippetPrompt = Prompts.createBalancedSnippetPrompt(contextData, textToAnalyze, element);
         const snippetResponse = await callGemini(apiKey, snippetPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'snippet' });
         const snippetJSON = safeJSON(snippetResponse, { example: null });
         return typeof snippetJSON.example === 'string' ? snippetJSON.example.trim() : '';
@@ -1795,7 +1340,7 @@ TEXT:
 
   bgLog('Agent 5: Prosecutor building case...');
 
-  const prosecutorPrompt = AgentPrompts.createProsecutorPrompt(
+  const prosecutorPrompt = Prompts.createProsecutorPrompt(
 
     contextData,
 
@@ -1819,7 +1364,7 @@ TEXT:
 
   bgLog('Agents 6-7: Defense and Investigator running in parallel...');
 
-  const defensePrompt = AgentPrompts.createDefensePrompt(
+  const defensePrompt = Prompts.createDefensePrompt(
 
     prosecutorJSON,
 
@@ -1835,7 +1380,7 @@ TEXT:
 
   );
 
-  const investigatorPrompt = AgentPrompts.createInvestigatorPrompt(
+  const investigatorPrompt = Prompts.createInvestigatorPrompt(
 
     prosecutorJSON,
 
@@ -1867,7 +1412,7 @@ TEXT:
 
   // Agent 8: Judge - Final adjudication using tribunal debate
 
-  const judgePrompt = AgentPrompts.createJudgePrompt(
+  const judgePrompt = Prompts.createJudgePrompt(
 
     prosecutorJSON,
 
@@ -1938,167 +1483,6 @@ TEXT:
     extractedConfidence: correctConfidence
 
   };
-
-  /*
-
-  // OLD MODERATOR LOGIC (REPLACED BY TRIBUNAL)
-
-  const moderatorPrompt = `You are the Moderator. Merge the agent evidence into a neutral, methodical report. Enforce strict evidence thresholds and valid outputs.
-
-ALGORITHM (apply in order):
-
-1) Read CONTEXT.type and CONTEXT.is_opinion_or_analysis.
-
-   - If Opinion or Analysis → Output: 
-
-     Rating: Unclear
-
-     Confidence: High
-
-     And a single line note: "Opinion content — not evaluated for news bias."
-
-     Then include BALANCED ELEMENTS (if any) and METHODOLOGY NOTE.
-
-     Do not attempt bias synthesis.
-
-2) For News/Other:
-
-   - Compute evidence points: from HUNTER_JSON.bias_indicators in narrative only:
-
-       High = 2 points, Medium = 1 point, Low = 0.5 points (cap Low at 1 total).
-
-     Require total ≥2 AND at least 2 independent indicators (different types/examples) to move off Center.
-
-   - Quote weighting: if QUOTES_JSON.total_quotes > 0 and
-
-       (QUOTES_JSON.quotes_with_loaded_terms / QUOTES_JSON.total_quotes) ≥ 0.7,
-
-       treat loaded language primarily as source bias; increase neutrality (gravitate toward Center).
-
-   - Skeptic override: if SKEPTIC_JSON.balance_score ≥ 8 AND SKEPTIC_JSON.confidence === "High" → FORCE Rating: Center.
-
-   - Map result to allowed ratings ONLY: Center | Lean Left | Lean Right | Strong Left | Strong Right | Unclear.
-
-     If any other label produced, replace with "Unclear".
-
-Use EXACT sections:
-
-OVERALL BIAS ASSESSMENT
-
-Rating: Center/Lean Left/Lean Right/Strong Left/Strong Right/Unclear
-
-Confidence: High/Medium/Low
-
-KEY FINDINGS
-
-- (Provide 2-4 items about REPORTING choices, not quoted content)
-
-LOADED LANGUAGE EXAMPLES
-
-- Provide 2-5 items. Each item: "<phrase>" — short reason, neutral alternative.
-
-- If language is neutral, write: "No material loaded wording in narrative."
-
-BALANCED ELEMENTS
-
-- (Provide 1-3 items about genuine journalistic quality/balance)
-
-METHODOLOGY NOTE
-
-- One sentence on separating quotes from narrative and points threshold to avoid false positives.
-
-Evidence (verbatim JSON from agents):
-
-CONTEXT: ${contextData}
-
-LANGUAGE_JSON:
-
-${JSON.stringify(languageJSON)}
-
-HUNTER_JSON:
-
-${JSON.stringify(hunterJSON)}
-
-SKEPTIC_JSON:
-
-${JSON.stringify(skepticJSON)}
-
-QUOTES_JSON:
-
-${JSON.stringify(quoteJSON)}
-
-${analysisDepth === 'deep' ? `
-
-SOURCE_DIVERSITY_JSON:
-
-${sourceDiversityResponse}
-
-FRAMING_JSON:
-
-${framingResponse}
-
-OMISSION_JSON:
-
-${omissionResponse}
-
-` : ''}
-
-CRITICAL RULES:
-
-- Default to Center unless the point & independence thresholds are met.
-
-- Never rate Opinion/Analysis for news bias (use Unclear with the note).
-
-- NEVER treat statistics/data-backed claims as loaded language.
-
--- Keep under ${analysisDepth === 'deep' ? '400' : '300'} words. Do NOT mention "agents".`;
-
-  const moderatorPrompt = AgentPrompts.createModeratorPrompt(
-
-    contextData,
-
-    JSON.stringify(languageJSON),
-
-    JSON.stringify(hunterJSON),
-
-    JSON.stringify(skepticJSON),
-
-    JSON.stringify(quoteJSON),
-
-    analysisDepth,
-
-    analysisDepth === 'deep' ? { sourceDiversity: sourceDiversityResponse, framing: framingResponse, omission: omissionResponse } : null
-
-  );
-
-  const moderatorResponse = await callGemini(apiKey, moderatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: true });
-
-  bgLog('Moderator response received');
-
-  bgLog('Moderator response type:', typeof moderatorResponse);
-
-  bgLog('Moderator response length:', typeof moderatorResponse === 'string' ? moderatorResponse.length : 'N/A');
-
-  bgLog('Moderator response:', moderatorResponse);
-
-  bgLog('Multi-agent scan complete');
-
-  return {
-
-    text: moderatorResponse,
-
-    languageAnalysis: languageJSON.loaded_phrases?.slice?.(0, 8) || [],
-
-    balancedElements: skepticJSON.balanced_elements || [],
-
-    biasIndicators: hunterJSON.bias_indicators || [],
-
-    quotes: quoteJSON.quotes || []
-
-  };
-
-  */
-
 }
 
 // callGeminiAPI removed; migrated to callGemini helper above

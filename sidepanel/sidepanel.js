@@ -3,6 +3,7 @@
  * Manages article scanning, AI analysis, and user interactions
  */
 import { AgentPrompts } from '../shared/prompts.js';
+import { OnDevicePrompts } from '../shared/prompt-quick-ondevice.js';
 
 const SP_LOG_PREFIX = '[Sidepanel]';
 const spLog = (...args) => console.log(SP_LOG_PREFIX, ...args);
@@ -408,7 +409,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'bn-modal-close';
     closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.textContent = '�';
+    closeBtn.textContent = '�';
     
     const icon = document.createElement('div');
     icon.className = 'bn-modal-icon';
@@ -846,8 +847,65 @@ ${fullText}`;
     }
   }
 
+  // ============================================
+  // INTELLIGENT CHUNKING CONFIGURATION
+  // ============================================
+  const CHUNKING_CONFIG = {
+    // Strategy thresholds
+    NO_CHUNK_THRESHOLD: 2800,    // 70% of articles - analyze whole
+    LIGHT_CHUNK_THRESHOLD: 6000, // 20% of articles - light chunking
+    // Above 6000 = heavy chunking
+    
+    // Chunking parameters
+    CHUNK_SIZE: 2600,     // Conservative for token safety
+    OVERLAP: 400,         // Find natural boundaries
+    SAFETY_MARGIN: 200,   // Buffer for tokenization variance
+    
+    // For context extraction from long articles
+    CONTEXT_SUMMARY_SIZE: 2500  // Lead + opening paragraphs
+  };
+
   /**
-   * Scans article using on-device AI with a "chunking" strategy to handle large texts.
+   * Helper: Smart chunking at paragraph/sentence boundaries
+   */
+  function smartChunk(text, targetSize, overlap) {
+    const chunks = [];
+    let start = 0;
+    
+    while (start < text.length) {
+      let end = Math.min(start + targetSize, text.length);
+      
+      // If not at end, find natural boundary
+      if (end < text.length) {
+        const searchStart = Math.max(0, end - 100);
+        const searchEnd = Math.min(text.length, end + 100);
+        const searchWindow = text.substring(searchStart, searchEnd);
+        
+        // Try paragraph break first
+        const paragraphBreak = searchWindow.lastIndexOf('\n\n');
+        if (paragraphBreak !== -1 && paragraphBreak > 50) {
+          end = searchStart + paragraphBreak;
+        } else {
+          // Fall back to sentence boundary
+          const sentenceBreak = searchWindow.lastIndexOf('. ');
+          if (sentenceBreak !== -1 && sentenceBreak > 50) {
+            end = searchStart + sentenceBreak + 2;
+          }
+        }
+      }
+      
+      chunks.push(text.substring(start, end).trim());
+      start = end - overlap;
+      
+      // Safety: prevent infinite loops
+      if (start >= text.length - overlap) break;
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Scans article using INTELLIGENT chunking - only chunks when necessary
    */
   async function scanWithOnDeviceAI(articleContent, tabId) {
     if (state.isScanning) {
@@ -870,70 +928,91 @@ ${fullText}`;
         throw new Error(`On-device AI is not ready. Status: ${availability}`);
       }
 
-      spLog('Starting on-device chunk analysis');
       const session = await window.LanguageModel.create();
       state.currentSession = session;
 
-      const fullText = articleContent.fullText || '';
-      const chunkSize = 3500; // Safely below the ~4000 char (1024 token) limit
-      const overlap = 500;   // Overlap chunks to maintain context
-      const chunks = [];
-      for (let i = 0; i < fullText.length; i += (chunkSize - overlap)) {
-        chunks.push(fullText.substring(i, i + chunkSize));
-      }
-      spLog(`Article split into ${chunks.length} chunks.`);
-
-      // --- Run analysis agents on each chunk in parallel ---
-      const analysisPromises = chunks.map(async (chunk) => {
-        // We only need the core agents for chunk analysis
-        const contextPrompt = AgentPrompts.createContextPrompt(chunk);
-        const contextJSON = safeJSON(await session.prompt(contextPrompt), { type: 'Unknown' });
-        spLog('Context Analysis Result:', {
-          type: contextJSON.type,
-          is_opinion: contextJSON.is_opinion_or_analysis,
-          confidence: contextJSON.confidence,
-          full: contextJSON
-        });
-        const contextData = `${contextJSON.type || 'Unknown'} chunk.`;
-
-        const languagePrompt = AgentPrompts.createLanguagePrompt(contextData, chunk);
-        const hunterPrompt = AgentPrompts.createHunterPrompt(contextData, chunk);
-        const skepticPrompt = AgentPrompts.createSkepticPrompt(contextData, chunk);
-        const quotePrompt = AgentPrompts.createQuotePrompt(contextData, chunk);
-
-        const [langRes, huntRes, skepRes, quoteRes] = await Promise.all([
-          session.prompt(languagePrompt),
-          session.prompt(hunterPrompt),
-          session.prompt(skepticPrompt),
-          session.prompt(quotePrompt)
+      const fullText = (articleContent.fullText || '').replace(/\s+/g, ' ').trim();
+      const articleLength = fullText.length;
+      
+      // ============================================
+      // INTELLIGENT STRATEGY SELECTION
+      // ============================================
+      let strategy, contextData, chunkAnalyses;
+      
+      if (articleLength <= CHUNKING_CONFIG.NO_CHUNK_THRESHOLD) {
+        // ============================================
+        // STRATEGY 1: WHOLE - No Chunking (5 AI calls)
+        // ============================================
+        strategy = 'WHOLE';
+        spLog(`📄 Strategy: WHOLE (${articleLength} chars) - No chunking needed`);
+        
+        // Run context once on full article
+        const contextPrompt = OnDevicePrompts.createContextPrompt(fullText);
+        const contextRes = await session.prompt(contextPrompt);
+        const contextJSON = safeJSON(contextRes, { type: 'Unknown', tone: 'Neutral' });
+        contextData = `Type: ${contextJSON.type}, Tone: ${contextJSON.tone}`;
+        
+        // Run all analysis agents in parallel on full article
+        const [langRes, huntRes, skepRes] = await Promise.all([
+          session.prompt(OnDevicePrompts.createLanguagePrompt(contextData, fullText)),
+          session.prompt(OnDevicePrompts.createHunterPrompt(contextData, fullText)),
+          session.prompt(OnDevicePrompts.createSkepticPrompt(contextData, fullText))
         ]);
-
-        const rawSkeptic = safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' });
-        let balancedElements = [];
-        if (Array.isArray(rawSkeptic.balanced_elements) && rawSkeptic.balanced_elements.length) {
-          balancedElements = await ensureBalancedExamples(
-            rawSkeptic.balanced_elements,
-            chunk,
-            async (element, chunkText) => {
-              const snippetPrompt = AgentPrompts.createBalancedSnippetPrompt(contextData, chunkText, element);
-              const snippetResponse = await session.prompt(snippetPrompt);
-              const snippetJSON = safeJSON(snippetResponse, { example: null });
-              return typeof snippetJSON.example === 'string' ? snippetJSON.example.trim() : '';
-            }
-          );
-        }
-        const skeptic = { ...rawSkeptic, balanced_elements: balancedElements };
-
-        return {
+        
+        chunkAnalyses = [{
           context: contextJSON,
           language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
           hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
-          skeptic,
-          quotes: safeJSON(quoteRes, { quotes: [], quotes_with_loaded_terms: 0, total_quotes: 0, confidence: 'High' })
-        };
-      });
-
-      const chunkAnalyses = await Promise.all(analysisPromises);
+          skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' })
+        }];
+        
+      } else {
+        // ============================================
+        // STRATEGY 2 & 3: LIGHT/HEAVY Chunking
+        // ============================================
+        strategy = articleLength <= CHUNKING_CONFIG.LIGHT_CHUNK_THRESHOLD ? 'LIGHT' : 'HEAVY';
+        spLog(`📄 Strategy: ${strategy} (${articleLength} chars) - Smart chunking enabled`);
+        
+        // Step 1: Context agent runs ONCE on article summary
+        const articleSummary = fullText.substring(0, CHUNKING_CONFIG.CONTEXT_SUMMARY_SIZE);
+        const contextPrompt = OnDevicePrompts.createContextPrompt(articleSummary);
+        const contextRes = await session.prompt(contextPrompt);
+        const contextJSON = safeJSON(contextRes, { type: 'Unknown', tone: 'Neutral' });
+        contextData = `Type: ${contextJSON.type}, Tone: ${contextJSON.tone}`;
+        
+        spLog('Context Analysis Result:', {
+          type: contextJSON.type,
+          is_opinion: contextJSON.is_opinion_or_analysis,
+          confidence: contextJSON.confidence
+        });
+        
+        // Step 2: Smart chunk at natural boundaries
+        const chunks = smartChunk(fullText, CHUNKING_CONFIG.CHUNK_SIZE, CHUNKING_CONFIG.OVERLAP);
+        spLog(`📊 Created ${chunks.length} chunks at natural boundaries`);
+        
+        // Step 3: Run analysis agents on each chunk (parallel per chunk)
+        const analysisPromises = chunks.map(async (chunk) => {
+          const [langRes, huntRes, skepRes] = await Promise.all([
+            session.prompt(OnDevicePrompts.createLanguagePrompt(contextData, chunk)),
+            session.prompt(OnDevicePrompts.createHunterPrompt(contextData, chunk)),
+            session.prompt(OnDevicePrompts.createSkepticPrompt(contextData, chunk))
+          ]);
+          
+          return {
+            language: safeJSON(langRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' }),
+            hunter: safeJSON(huntRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'High' }),
+            skeptic: safeJSON(skepRes, { balanced_elements: [], balance_score: 5, confidence: 'High' })
+          };
+        });
+        
+        const chunkResults = await Promise.all(analysisPromises);
+        
+        // Combine context (run once) with chunk analyses
+        chunkAnalyses = [{
+          context: contextJSON,
+          ...chunkResults[0]
+        }, ...chunkResults.slice(1).map(result => ({ context: contextJSON, ...result }))];
+      }
       spLog(`Completed analysis on all ${chunkAnalyses.length} chunks.`);
 
       // --- Aggregate highlight data from all chunks ---
@@ -959,9 +1038,9 @@ ${fullText}`;
       });
 
       // --- Synthesize the results from all chunks ---
-      spLog('Synthesizing final report');
-      const synthesizerPrompt = AgentPrompts.createSynthesizerPrompt(JSON.stringify(chunkAnalyses, null, 2));
-      const finalReportMarkdown = await session.prompt(synthesizerPrompt);
+      spLog('Synthesizing final report with on-device moderator');
+      const moderatorPrompt = OnDevicePrompts.createModeratorPrompt(JSON.stringify(chunkAnalyses, null, 2));
+      const finalReportMarkdown = await session.prompt(moderatorPrompt);
 
       // The final report is a simple object containing the markdown text
       const analysisResult = { text: finalReportMarkdown };
@@ -972,8 +1051,9 @@ ${fullText}`;
       spLog('Saving analysis entry to history');
       const reportId = Date.now();
       
-      // Call saveAnalysisResults with reportId
-      await saveAnalysisResults(analysisResult, 'on-device (chunked)', articleContent, reportId);
+      // Call saveAnalysisResults with reportId and strategy
+      const sourceLabel = `on-device (${strategy.toLowerCase()})`;
+      await saveAnalysisResults(analysisResult, sourceLabel, articleContent, reportId);
 
       // --- Send highlighting data to content script ---
       const hasBiasedPhrases = allLoadedPhrases.length > 0;
