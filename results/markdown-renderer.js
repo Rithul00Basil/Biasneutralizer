@@ -24,6 +24,14 @@ export async function initMarkdownRenderer() {
     return false;
   }
   
+  // best-effort wait for hljs (optional)
+  if (typeof hljs === 'undefined') {
+    let tries = 0;
+    while (typeof hljs === 'undefined' && tries < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      tries++;
+    }
+  }
   if (typeof hljs === 'undefined') {
     console.warn('[MarkdownRenderer] highlight.js not loaded. Syntax highlighting will be disabled.');
   }
@@ -290,3 +298,4 @@ if (typeof module !== 'undefined' && module.exports) {
     renderPartialMarkdown
   };
 }
+

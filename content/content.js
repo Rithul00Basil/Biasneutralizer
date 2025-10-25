@@ -1419,25 +1419,26 @@ async function handleNeutralizeInPopup(originalText, explanation, popup, suggest
       context: `Remove bias: ${explanation}`
     });
 
-    let fullText = '';
+    let fullResponse = '';
     for await (const chunk of stream) {
-      fullText = chunk;
-      // Display without quotes for cleaner look, streaming cursor is added by CSS
-      neutralTextEl.textContent = fullText;
+      if (typeof chunk !== 'string' || !chunk.trim()) continue;
+      fullResponse += chunk;
+      neutralTextEl.textContent = fullResponse;
     }
 
     // Remove streaming cursor when complete
     neutralTextEl.classList.remove('streaming');
 
-    // Add quotes for final display
-    neutralTextEl.textContent = `"${fullText}"`;
+    // Set final text (no quotes, handle empty case)
+    const finalText = fullResponse.trim();
+    neutralTextEl.textContent = finalText || 'No neutralized text generated';
 
-    // Update button to "Done" state
+    // Update button to show success
     btnText.textContent = 'Done ✓';
     neutralBtn.classList.add('popup-btn-success');
-    neutralBtn.disabled = true;
+    neutralBtn.disabled = false;
 
-    contentLog('Neutralization complete:', fullText);
+    contentLog('Neutralization complete:', finalText);
 
   } catch (error) {
     contentError('Neutralization failed:', error);
@@ -1883,16 +1884,19 @@ async function performNeutralization(modal, originalText, suggestedAlternative) 
       }
     );
 
-    let fullText = '';
+    let fullResponse = '';
     for await (const chunk of stream) {
-      fullText = chunk;
-      neutralSection.textContent = fullText;
+      if (typeof chunk !== 'string' || !chunk.trim()) continue;
+      fullResponse += chunk;
+      neutralSection.textContent = fullResponse;
     }
 
-    // Remove streaming cursor when complete
     neutralSection.classList.remove('streaming');
     
-    contentLog('Neutralization complete:', fullText);
+    const finalText = fullResponse.trim();
+    neutralSection.textContent = finalText || '(No output from model)';
+
+    contentLog('Neutralization complete:', finalText);
 
   } catch (error) {
     contentError('Neutralization failed:', error);
