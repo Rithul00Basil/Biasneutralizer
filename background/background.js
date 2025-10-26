@@ -6,7 +6,7 @@
 
  */
 
-import { AgentPrompts } from '../shared/prompts.js';
+import { AgentPrompts } from '../shared/prompts-deep-cloud.js';
 import { AgentPrompts as QuickPrompts } from '../shared/prompt-quick-cloud.js';
 
 const BG_LOG_PREFIX = '[Background]';
@@ -115,11 +115,18 @@ async function coordinateGrounding(articleData, apiKey, analysisDepth, isRetry =
  * @param {Object} articleData - { title, text, url }
  * @returns {string} - Prompt for AI
  */
-function createQueryGenerationPrompt(articleData) {
-  const { title, text, url } = articleData;
+function createQueryGenerationPrompt(articleData, options = {}) {
+  const safeData = articleData || {};
+  const { maxChars = 8000 } = options;
+  const title = typeof safeData.title === 'string' ? safeData.title : '';
+  const text = typeof safeData.text === 'string' ? safeData.text : '';
+  const url = typeof safeData.url === 'string' ? safeData.url : '';
   
-  // Limit text to first 8000 characters to save tokens
-  const articleText = text.substring(0, 8000);
+  // Limit text to the requested number of characters to control token usage
+  const articleText = text.slice(0, maxChars);
+  const snippetNotice = text.length > maxChars
+    ? `\n(Note: content truncated to first ${maxChars} characters for prompt efficiency.)`
+    : '';
   
   // Extract domain for context
   let domain = 'unknown';
@@ -136,7 +143,9 @@ function createQueryGenerationPrompt(articleData) {
 ARTICLE INFORMATION:
 Title: ${title}
 Source: ${domain}
-Content: ${articleText}
+Content (first ${articleText.length} characters):
+${articleText}
+${snippetNotice}
 
 YOUR TASK:
 Generate 6-8 strategic Google search queries that will help verify the accuracy of this article's claims.
@@ -166,14 +175,14 @@ QUERY GENERATION GUIDELINES:
       - Format: "${domain} bias rating media bias"
 
 3. QUERY QUALITY CHECKLIST:
-   ✓ Specific (include names, numbers, dates)
-   ✓ Searchable (how people actually search, not questions)
-   ✓ Verifiable (can find authoritative sources)
-   ✓ Include year for recency (2025)
-   ✓ 3-8 words optimal length
-   ✗ Avoid raw article text
-   ✗ Avoid vague terms (news, updates, information)
-   ✗ Avoid questions (use statements)
+   - Specific: include names, numbers, dates
+   - Searchable: match how people actually search (no questions)
+   - Verifiable: likely to surface authoritative sources
+   - Time-aware: include the year 2025 for current claims
+   - Concise: keep queries roughly 3-8 words
+   - Avoid copying raw sentences from the article
+   - Avoid vague words like "news", "updates", "information"
+   - Avoid question formats; use declarative phrasing
 
 4. ADAPT TO ARTICLE TYPE:
    - News: Verify events, statistics, quotes
@@ -223,86 +232,127 @@ Generate exactly 6-8 queries. Prioritize high-priority queries first.`;
  */
 async function generateQueriesWithAI(articleData, apiKey) {
   const logPrefix = '[Query Agent]';
-  
-  try {
-    console.log(`${logPrefix} Analyzing article to generate intelligent queries...`);
-    
-    // Build prompt
-    const prompt = createQueryGenerationPrompt(articleData);
-    
-    // Create timeout promise (10 seconds max)
+  const attemptPlan = [
+    { label: 'primary', maxChars: 8000 },
+    { label: 'retry-shortened', maxChars: 4000 }
+  ];
+  const priorityOrder = { high: 3, medium: 2, low: 1 };
+  let lastError = null;
+
+  const requestFromAI = async ({ label, maxChars }) => {
+    const availableText = typeof articleData?.text === 'string' ? articleData.text : '';
+    const inspectedChars = Math.min(availableText.length, maxChars);
+    console.log(`${logPrefix} Attempt ${label}: analyzing first ${inspectedChars} characters (max ${maxChars}).`);
+
+    const prompt = createQueryGenerationPrompt(articleData, { maxChars });
+
+    const timeoutMs = 5000;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('AI query generation timeout')), 10000);
+      setTimeout(() => reject(new Error(`AI query generation timeout after ${timeoutMs}ms`)), timeoutMs);
     });
-    
-    // Call AI with flash-lite for speed
+
     const aiResponsePromise = callGemini(
       apiKey,
       prompt,
-      0, // thinking budget: 0 (no thinking needed)
-      null, // no abort signal
-      'quick', // fast mode
+      0, // thinking budget
+      null,
+      'quick',
       { normalize: false, agentRole: 'queryGenerator' }
     );
-    
-    // Race between AI call and timeout
+
     const aiResponse = await Promise.race([aiResponsePromise, timeoutPromise]);
-    
-    // Validate response exists
+
     if (!aiResponse || typeof aiResponse !== 'string') {
-      throw new Error('AI returned empty or invalid response');
+      throw new Error('AI returned empty or non-text response');
     }
-    
-    // Parse JSON response
+
+    let cleanResponse = aiResponse.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+    const firstBrace = cleanResponse.indexOf('{');
+    const lastBrace = cleanResponse.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      cleanResponse = cleanResponse.slice(firstBrace, lastBrace + 1);
+    }
+
     let queryData;
     try {
-      // Remove markdown code blocks if present
-      const cleanResponse = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       queryData = JSON.parse(cleanResponse);
     } catch (parseError) {
-      console.error(`${logPrefix} JSON parse failed:`, parseError);
-      console.error(`${logPrefix} Raw response:`, aiResponse.substring(0, 500));
+      console.error(`${logPrefix} Attempt ${label} JSON parse failed:`, parseError);
+      console.error(`${logPrefix} Attempt ${label} raw response (first 500 chars):`, aiResponse.substring(0, 500));
       throw new Error('Invalid JSON response from AI');
     }
-    
-    // Validate response structure
-    if (!queryData.queries || !Array.isArray(queryData.queries)) {
+
+    if (!Array.isArray(queryData?.queries)) {
       throw new Error('AI response missing queries array');
     }
-    
-    if (queryData.queries.length < 4) {
-      throw new Error(`AI generated too few queries: ${queryData.queries.length}`);
+
+    const structuredQueries = queryData.queries.map((entry, index) => {
+      const rawQuery = typeof entry?.query === 'string' ? entry.query.trim() : '';
+      const priority = typeof entry?.priority === 'string' ? entry.priority.toLowerCase() : 'medium';
+      const purpose = typeof entry?.purpose === 'string' ? entry.purpose.trim() : 'Unknown';
+      const reasoning = typeof entry?.reasoning === 'string' ? entry.reasoning.trim() : '';
+      return { rawQuery, priority, purpose, reasoning, index };
+    }).filter(q => q.rawQuery.length > 0);
+
+    if (structuredQueries.length < 6) {
+      throw new Error(`AI produced ${structuredQueries.length} usable queries (need 6-8).`);
     }
-    
-    // Sort by priority (high > medium > low)
-    const priorityOrder = { high: 3, medium: 2, low: 1 };
-    queryData.queries.sort((a, b) => {
-      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+
+    structuredQueries.sort((a, b) => {
+      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0) || a.index - b.index;
     });
-    
-    // Extract just the query strings (limit to 8)
-    const queries = queryData.queries
-      .slice(0, 8)
-      .map(q => q.query)
-      .filter(q => q && typeof q === 'string' && q.trim().length > 0);
-    
-    // Final validation
-    if (queries.length === 0) {
-      throw new Error('No valid queries extracted from AI response');
+
+    const deduped = [];
+    const seen = new Set();
+    for (const item of structuredQueries) {
+      const normalized = item.rawQuery.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        deduped.push(item);
+      }
     }
-    
-    console.log(`${logPrefix} AI generated ${queries.length} queries`);
+
+    const finalItems = deduped.slice(0, 8);
+
+    if (finalItems.length < 6) {
+      throw new Error(`AI produced only ${finalItems.length} unique queries after deduplication.`);
+    }
+
+    const priorityBreakdown = finalItems.reduce((acc, item) => {
+      const bucket = priorityOrder[item.priority] ? item.priority : 'medium';
+      acc[bucket] = (acc[bucket] || 0) + 1;
+      return acc;
+    }, {});
+
+    console.log(`${logPrefix} Attempt ${label} succeeded with ${finalItems.length} queries.`);
     console.log(`${logPrefix} Article type: ${queryData.article_type || 'Unknown'}`);
     console.log(`${logPrefix} Strategy: ${queryData.overall_strategy || 'N/A'}`);
-    console.log(`${logPrefix} Key claims: ${queryData.key_claims_identified?.length || 0}`);
-    
-    return queries;
-    
-  } catch (error) {
-    console.error(`${logPrefix} AI query generation failed:`, error.message);
-    console.log(`${logPrefix} Falling back to algorithmic query generation`);
-    return null; // Signal to use fallback
+    if (Array.isArray(queryData.key_claims_identified)) {
+      console.log(`${logPrefix} Key claims identified: ${queryData.key_claims_identified.length}`);
+    }
+    console.log(`${logPrefix} Priority breakdown: ` +
+      `high=${priorityBreakdown.high || 0}, medium=${priorityBreakdown.medium || 0}, low=${priorityBreakdown.low || 0}`);
+
+    return finalItems.map(item => item.rawQuery);
+  };
+
+  for (const attempt of attemptPlan) {
+    try {
+      const queries = await requestFromAI(attempt);
+      if (queries && queries.length) {
+        return queries;
+      }
+    } catch (error) {
+      lastError = error;
+      console.error(`${logPrefix} Attempt ${attempt.label} failed:`, error.message);
+    }
   }
+
+  if (lastError) {
+    console.error(`${logPrefix} AI query generation failed after retries:`, lastError.message);
+  }
+  console.log(`${logPrefix} Falling back to algorithmic query generation`);
+  return null;
 }
 
 /**

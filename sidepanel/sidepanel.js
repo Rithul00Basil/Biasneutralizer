@@ -2,7 +2,7 @@
  * BiasNeutralizer Side Panel Controller
  * Manages article scanning, AI analysis, and user interactions
  */
-import { AgentPrompts } from '../shared/prompts.js';
+import { AgentPrompts } from '../shared/prompts-deep-cloud.js';
 import { OnDevicePrompts } from '../shared/prompt-quick-ondevice.js';
 
 const SP_LOG_PREFIX = '[Sidepanel]';
