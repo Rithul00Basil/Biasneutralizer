@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -c \"\nimport os\n\n# Check all relevant files\nfiles_to_check = [\n    ''reports/reports.js'',\n    ''results/results.js'',\n    ''results/results.html'',\n    ''results/results.css'',\n    ''content/content.js''\n]\n\nprint(''=== Final Encoding Check ==='')\nprint()\nall_clean = True\n\nfor fpath in files_to_check:\n    if os.path.exists(fpath):\n        with open(fpath, ''r'', encoding=''utf-8'', errors=''replace'') as f:\n            content = f.read()\n            issue_count = content.count(''ðŸ'') + content.count(''\\ufffd'')\n            \n            status = ''CLEAN'' if issue_count == 0 else f''{issue_count} ISSUES''\n            print(f''{fpath}: {status}'')\n            \n            if issue_count > 0:\n                all_clean = False\n\nprint()\nif all_clean:\n    print(''All files have been fixed successfully!'')\nelse:\n    print(''Some files still have encoding issues'')\n\")"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}
