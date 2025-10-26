@@ -258,44 +258,7 @@ Eight specialized AI roles work together:
 
 ---
 
-## 🎓 Advanced Usage
 
-### Analysis Modes
-
-| Mode | Agents | Speed | Detail | Grounding |
-|------|--------|-------|--------|-----------|
-| **Quick** | 5 core agents | ~5 sec | Essential bias detection | Optional (adds ~3s) |
-| **Deep** | 8 agents + specialists | ~20 sec | Comprehensive analysis | Optional (adds ~3s) |
-
-**Note**: Private Mode uses on-device AI (Gemini Nano) with similar agent structure but different prompts optimized for local execution.
-
-### Keyboard Shortcuts
-
-- `Ctrl+Shift+B` - Open side panel (coming soon)
-- `Escape` - Close popups
-- `Click highlight` - Show details
-
-### API Configuration
-
-**Storage Keys:**
-```javascript
-// Stored in chrome.storage.local
-{
-  "geminiApiKey": "your_api_key_here",
-  "analysisDepth": "deep",              // or "quick"
-  "isRealtimeGrounding": true,          // Enable real-time fact-checking
-  "isPrivateMode": false,               // false = Cloud, true = On-device
-  "hasCompletedSetup": true             // Setup completion flag
-}
-```
-
-**Model Selection:**
-- **Cloud Mode Deep**: gemini-2.5-pro (with thinking budget)
-- **Cloud Mode Quick**: gemini-flash-latest
-- **Query Generation**: gemini-flash-lite-latest
-- **On-Device**: Gemini Nano (local)
-
----
 
 ## 📁 Project Structure
 
