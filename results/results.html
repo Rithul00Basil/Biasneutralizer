@@ -69,7 +69,9 @@
         </div>
         <div class="hero-details">
           <div class="report-meta">
-            <div class="article-badge">ANALYZED ARTICLE</div>
+            <div class="badge-container">
+              <div class="article-badge">ANALYZED ARTICLE</div>
+            </div>
             <a id="article-title" class="article-title" href="#" target="_blank" rel="noopener">No analysis yet</a>
             <div class="article-submeta">
               <span class="meta-item">
@@ -114,6 +116,20 @@
               </div>
               <div class="card-body" id="summary-content">
                 <p class="placeholder-text">Generating on-device summary...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-time Sources Card (Phase 5 will populate this) -->
+          <div class="analysis-card analysis-card--sources hidden" id="grounding-sources-card">
+            <div class="card-background"></div>
+            <div class="card-content">
+              <div class="card-header">
+                <span class="card-icon">🌐</span>
+                <h2 class="card-title">Real-time Sources</h2>
+              </div>
+              <div class="card-body" id="grounding-sources-content">
+                <!-- Phase 5 will render citations here -->
               </div>
             </div>
           </div>

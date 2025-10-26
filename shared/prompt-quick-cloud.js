@@ -565,7 +565,18 @@ CONFIDENCE LEVELS:
 
 REMEMBER: Most professional journalism should rate "Center" unless clear evidence exists otherwise.
 `,
+  createBalancedSnippetPrompt(context, text, element) {
+    const target = element?.description || element?.claim || element?.phrase || '';
+    return `
+You will return JSON only: {"example": "<5-15 word neutral excerpt>"}
+Find a short neutral excerpt from TEXT that supports balance for: "${target}"
+Constraints: 5–15 words, quote verbatim from TEXT, no ellipses inside.
 
+CONTEXT: ${context}
+TEXT:
+"""${text.slice(0, 20000)}"""
+`;
+  },
   // ---------- 10) SKELETON EXTRACTOR ----------
   createSkeletonExtractorPrompt: (articleText) => `
 You are a structural analyst extracting the article's semantic skeleton.

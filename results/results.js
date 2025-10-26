@@ -266,6 +266,252 @@ import { initMarkdownRenderer, renderMarkdownToElement } from './markdown-render
   const els = {};
 
   // ========================================
+  // GROUNDING STATE
+  // ========================================
+  let groundingState = {
+    enabled: false,
+    citations: [],
+    insights: [],
+    displayMode: 'compact'
+  };
+  
+  let citationsExpanded = false;
+  const INITIAL_CITATION_COUNT = 3;
+
+  /**
+   * Get grounding citations if available
+   * @returns {Array} Array of citation objects or empty array
+   */
+  function getGroundingCitations() {
+    return groundingState.citations || [];
+  }
+
+  /**
+   * Check if grounding was enabled for this analysis
+   * @returns {boolean}
+   */
+  function hasGrounding() {
+    return groundingState.enabled && groundingState.citations.length > 0;
+  }
+
+  /**
+   * Get citation by index
+   * @param {number} index - Citation index (1-based)
+   * @returns {Object|null} Citation object or null
+   */
+  function getCitationByIndex(index) {
+    return groundingState.citations.find(c => c.index === index) || null;
+  }
+
+  // ========================================
+  // GROUNDING CITATION RENDERING HELPERS
+  // ========================================
+  
+  /**
+   * Extract domain from URL
+   * @param {string} url - Full URL
+   * @returns {string} - Clean domain name
+   */
+  function extractDomain(url) {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace(/^www\./, '');
+    } catch (e) {
+      return 'unknown';
+    }
+  }
+
+
+
+  /**
+   * Escape HTML to prevent XSS
+   * @param {string} text - Text to escape
+   * @returns {string} - Escaped text
+   */
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /**
+   * Truncate text with ellipsis
+   * @param {string} text - Text to truncate
+   * @param {number} maxLength - Maximum length
+   * @returns {string} - Truncated text
+   */
+  function truncateText(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength).trim() + '...';
+  }
+
+  /**
+   * Render a single citation card
+   * @param {Object} citation - Citation object
+   * @returns {string} - HTML for citation card
+   */
+  function renderCitationCard(citation) {
+    const domain = extractDomain(citation.url);
+    const title = escapeHtml(citation.title || 'Untitled Source');
+    const url = citation.url || '#';
+    const snippet = citation.snippet ? escapeHtml(citation.snippet) : null;
+    const publishDate = citation.publishDate || null;
+    
+    return `
+      <div class="citation-card" data-citation-index="${citation.index}">
+        <div class="citation-header">
+          <span class="citation-number">${citation.index}</span>
+          <div class="citation-header-content">
+            <h3 class="citation-title" title="${escapeHtml(citation.title)}">${title}</h3>
+            <div class="citation-meta">
+              <span class="citation-domain">
+                <svg class="domain-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                ${escapeHtml(domain)}
+              </span>
+              ${publishDate ? `<span class="citation-date">📅 ${publishDate}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        
+        ${snippet ? `
+          <div class="citation-body">
+            <div class="citation-snippet-label">Excerpt:</div>
+            <div class="citation-snippet">"${truncateText(snippet, 300)}"</div>
+          </div>
+        ` : ''}
+        
+        <div class="citation-footer">
+          <div class="citation-info">
+            <span class="citation-source-type">Web source</span>
+            <span class="citation-separator">•</span>
+            <span class="citation-relevance">Verified by Google Search</span>
+          </div>
+          <a href="${url}" target="_blank" rel="noopener noreferrer" class="citation-link-btn">
+            <span>Visit source</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Display grounding citations in the UI
+   */
+  function displayGroundingCitations(groundingData) {
+    resultsLog('[Results] displayGroundingCitations called with:', groundingData);
+    
+    if (!groundingData.enabled || !groundingData.citations.length) {
+      resultsLog('[Results] No citations to display');
+      return;
+    }
+    
+    const totalCount = groundingData.citations.length;
+    const displayCount = citationsExpanded ? totalCount : Math.min(INITIAL_CITATION_COUNT, totalCount);
+    
+    // Show the sources card
+    const sourcesCard = document.getElementById('grounding-sources-card');
+    if (!sourcesCard) {
+      resultsError('[Results] Sources card element not found');
+      return;
+    }
+    
+    sourcesCard.classList.remove('hidden');
+    
+    // Update card title
+    const cardTitle = sourcesCard.querySelector('.card-title');
+    if (cardTitle) {
+      cardTitle.textContent = 'Real-time Sources';
+    }
+    
+    // Render citations container
+    const container = document.getElementById('grounding-sources-content');
+    if (!container) {
+      resultsError('[Results] Sources content container not found');
+      return;
+    }
+    
+    // Enhanced summary section
+    const summaryHTML = `
+      <div class="citations-summary">
+        <div class="summary-header">
+          <svg class="summary-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 6v6l4 2"></path>
+          </svg>
+          <h3 class="summary-title">Real-time Verification</h3>
+        </div>
+        <p class="summary-text">
+          This analysis was enhanced with <strong>${totalCount} real-time source${totalCount !== 1 ? 's' : ''}</strong> from Google Search, 
+          providing current context and verification for the article's claims.
+        </p>
+      </div>
+    `;
+    
+    // Render only the first N citations
+    const citationsToShow = groundingData.citations.slice(0, displayCount);
+    const citationsHTML = citationsToShow
+      .map(citation => renderCitationCard(citation))
+      .join('');
+    
+    // Add "Show More" button if there are hidden citations
+    let showMoreButton = '';
+    if (totalCount > INITIAL_CITATION_COUNT && !citationsExpanded) {
+      const hiddenCount = totalCount - INITIAL_CITATION_COUNT;
+      showMoreButton = `
+        <div class="citations-show-more">
+          <button class="show-more-btn" id="show-more-citations">
+            Show ${hiddenCount} more source${hiddenCount !== 1 ? 's' : ''} ↓
+          </button>
+        </div>
+      `;
+    }
+    
+    // Add "Show Less" button if expanded
+    if (citationsExpanded) {
+      showMoreButton = `
+        <div class="citations-show-more">
+          <button class="show-more-btn" id="show-less-citations">
+            Show less ↑
+          </button>
+        </div>
+      `;
+    }
+    
+    container.innerHTML = summaryHTML + '<div class="citations-grid">' + citationsHTML + '</div>' + showMoreButton;
+    
+    // Attach event listeners
+    const showMoreBtn = document.getElementById('show-more-citations');
+    const showLessBtn = document.getElementById('show-less-citations');
+    
+    if (showMoreBtn) {
+      showMoreBtn.addEventListener('click', () => {
+        citationsExpanded = true;
+        displayGroundingCitations(groundingData);
+      });
+    }
+    
+    if (showLessBtn) {
+      showLessBtn.addEventListener('click', () => {
+        citationsExpanded = false;
+        displayGroundingCitations(groundingData);
+        // Scroll to sources card
+        sourcesCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+    
+    resultsLog('[Results] Rendered', displayCount, 'of', totalCount, 'citations');
+  }
+
+  // ========================================
   // INITIALIZATION
   // ========================================
   async function initResultsPage() {
@@ -480,6 +726,31 @@ import { initMarkdownRenderer, renderMarkdownToElement } from './markdown-render
     resultsLog('Raw data:', data);
 
     const { url, title, summary, source, timestamp, raw } = sanitizeAnalysisData(data);
+
+    // Extract and store grounding metadata
+    groundingState.enabled = data.groundingEnabled || false;
+    groundingState.citations = data.citations || [];
+    groundingState.insights = data.groundingInsights || [];
+
+    resultsLog('[Results] Grounding data loaded:', {
+      enabled: groundingState.enabled,
+      citations: groundingState.citations.length,
+      insights: groundingState.insights.length
+    });
+
+    // Make grounding data globally accessible
+    window.__GROUNDING__ = {
+      enabled: groundingState.enabled,
+      citations: groundingState.citations,
+      insights: groundingState.insights,
+      
+      // Helper methods
+      getCitation: (index) => getCitationByIndex(index),
+      hasCitations: () => hasGrounding(),
+      getCitationCount: () => groundingState.citations.length
+    };
+
+    resultsLog('[Results] Grounding context initialized:', window.__GROUNDING__);
     
     resultsLog('Sanitized data:');
     resultsLog('- summary:', summary);
@@ -579,6 +850,14 @@ import { initMarkdownRenderer, renderMarkdownToElement } from './markdown-render
       }
     } catch (err) {
       resultsError('Error revealing main content:', err);
+    }
+
+    // Display grounding citations if available
+    if (groundingState.enabled && groundingState.citations.length > 0) {
+      resultsLog('[Results] Calling displayGroundingCitations with', groundingState.citations.length, 'citations');
+      displayGroundingCitations(groundingState);
+    } else {
+      resultsLog('[Results] Not displaying citations. Grounding enabled:', groundingState.enabled, 'Citations count:', groundingState.citations.length);
     }
   }
 

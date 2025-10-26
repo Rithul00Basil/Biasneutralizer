@@ -36,6 +36,666 @@ let activeScanControllers = new Map(); // tabId -> AbortController
 
 class RetriableError extends Error {}
 
+// ========== GROUNDING COORDINATOR ==========
+// Generates strategic search queries and calls Gemini with Google Search tool
+// to provide real-time grounded context for bias analysis
+
+/**
+ * Main coordinator - orchestrates grounding with retry logic
+ * @param {Object} articleData - { title, text, url }
+ * @param {string} apiKey - Gemini API key
+ * @param {string} analysisDepth - 'quick' or 'deep'
+ * @param {boolean} isRetry - Whether this is a retry attempt (reduced queries)
+ * @returns {Object|null} - { contextText, citations, insights } or null on failure
+ */
+async function coordinateGrounding(articleData, apiKey, analysisDepth, isRetry = false) {
+  const logPrefix = '[Grounding]';
+  try {
+    console.log(`${logPrefix} Starting coordinator for: ${articleData.title}`);
+    
+    // Generate queries with AI or fallback
+    let queries;
+    let queryMethod = 'AI';
+    
+    if (isRetry) {
+      // On retry, use fast fallback to save time
+      console.log(`${logPrefix} Retry mode: using algorithmic fallback`);
+      queries = generateSearchQueriesFallback(articleData).slice(0, 3);
+      queryMethod = 'algorithmic (retry)';
+    } else {
+      // First attempt: try AI for intelligent queries
+      queries = await generateQueriesWithAI(articleData, apiKey);
+      
+      if (!queries || queries.length === 0) {
+        // AI failed, use fallback
+        console.log(`${logPrefix} Using algorithmic fallback`);
+        queries = generateSearchQueriesFallback(articleData);
+        queryMethod = 'algorithmic (fallback)';
+      }
+    }
+    
+    console.log(`${logPrefix} Generated ${queries.length} queries (${queryMethod}):`);
+    queries.forEach((q, i) => console.log(`  ${i + 1}. ${q}`));
+    
+    // Execute searches
+    const startTime = Date.now();
+    const groundedResults = await executeGroundedSearches(queries, apiKey, analysisDepth);
+    const searchTime = Date.now() - startTime;
+    
+    // Format context for tribunal
+    const groundingContext = formatGroundingContext(groundedResults);
+    
+    // Calculate quality metrics
+    const totalCitations = groundingContext.citations.length;
+    const uniqueSources = new Set(groundingContext.citations.map(c => {
+      try {
+        return new URL(c.url).hostname;
+      } catch (e) {
+        return c.url;
+      }
+    })).size;
+    const avgCitationsPerQuery = (totalCitations / queries.length).toFixed(1);
+    
+    console.log(`${logPrefix} Search complete in ${(searchTime / 1000).toFixed(1)}s:`);
+    console.log(`${logPrefix}   - Total citations: ${totalCitations}`);
+    console.log(`${logPrefix}   - Unique sources: ${uniqueSources}`);
+    console.log(`${logPrefix}   - Avg per query: ${avgCitationsPerQuery}`);
+    console.log(`${logPrefix}   - Method: ${queryMethod}`);
+    
+    return groundingContext;
+    
+  } catch (error) {
+    console.error(`${logPrefix} Failed:`, error);
+    return null;
+  }
+}
+
+/**
+ * Create prompt for AI query generation
+ * @param {Object} articleData - { title, text, url }
+ * @returns {string} - Prompt for AI
+ */
+function createQueryGenerationPrompt(articleData) {
+  const { title, text, url } = articleData;
+  
+  // Limit text to first 8000 characters to save tokens
+  const articleText = text.substring(0, 8000);
+  
+  // Extract domain for context
+  let domain = 'unknown';
+  if (url) {
+    try {
+      domain = new URL(url).hostname.replace(/^www\./, '');
+    } catch (e) {
+      // Invalid URL
+    }
+  }
+  
+  return `You are an expert fact-checking research assistant. Your task is to analyze a news article and generate optimal search queries for verification.
+
+ARTICLE INFORMATION:
+Title: ${title}
+Source: ${domain}
+Content: ${articleText}
+
+YOUR TASK:
+Generate 6-8 strategic Google search queries that will help verify the accuracy of this article's claims.
+
+QUERY GENERATION GUIDELINES:
+
+1. IDENTIFY KEY CLAIMS
+   - Find 3-4 specific factual claims that can be verified
+   - Focus on: numbers/statistics, event descriptions, quotes, policy details
+   - Ignore opinions or subjective statements
+
+2. QUERY TYPES (aim for diverse coverage):
+   a) CLAIM VERIFICATION (3-4 queries): Turn specific factual claims into searches
+      - Include specific numbers, dates, names from the claim
+      - Add year "2025" for time-sensitive topics
+      - Use official terminology when relevant
+      
+   b) SOURCE VERIFICATION (1-2 queries): Check people/organizations quoted
+      - Search for the person/org + their statement/claim
+      - Include context (their role, organization)
+      
+   c) CONTEXT QUERIES (1-2 queries): Broader background information
+      - Related developments, policies, or events
+      - Expert analysis or official data
+      
+   d) BIAS CHECK (1 query): Assess source credibility
+      - Format: "${domain} bias rating media bias"
+
+3. QUERY QUALITY CHECKLIST:
+   ✓ Specific (include names, numbers, dates)
+   ✓ Searchable (how people actually search, not questions)
+   ✓ Verifiable (can find authoritative sources)
+   ✓ Include year for recency (2025)
+   ✓ 3-8 words optimal length
+   ✗ Avoid raw article text
+   ✗ Avoid vague terms (news, updates, information)
+   ✗ Avoid questions (use statements)
+
+4. ADAPT TO ARTICLE TYPE:
+   - News: Verify events, statistics, quotes
+   - Opinion: Only verify cited facts, not opinions
+   - Press release: High skepticism, verify all claims
+   - Analysis: Check if based on accurate facts
+
+EXAMPLES OF GOOD VS BAD QUERIES:
+
+GOOD:
+- "DHS AI systems immigration enforcement 2025 official count"
+- "border crossing statistics June 2025 CBP data"
+- "One Big Beautiful Bill immigration legislation 2025"
+- "Kurt Volker Trump foreign policy statements 2025"
+
+BAD:
+- "Trump AI plan news" (too vague)
+- "What is the border situation?" (question format)
+- "verify Steps have been taken, however..." (raw article text)
+- "immigration information updates" (generic, not searchable)
+
+OUTPUT FORMAT:
+Return ONLY valid JSON (no markdown, no explanation):
+
+{
+  "queries": [
+    {
+      "query": "exact search query string",
+      "purpose": "Claim verification | Source check | Context | Bias assessment",
+      "reasoning": "brief why this query matters",
+      "priority": "high | medium | low"
+    }
+  ],
+  "article_type": "News | Opinion | Analysis | Press Release",
+  "key_claims_identified": ["list of 3-4 main factual claims"],
+  "overall_strategy": "one sentence explaining query strategy"
+}
+
+Generate exactly 6-8 queries. Prioritize high-priority queries first.`;
+}
+
+/**
+ * Generate queries using AI (gemini-flash-lite-latest)
+ * @param {Object} articleData - { title, text, url }
+ * @param {string} apiKey - Gemini API key
+ * @returns {Promise<string[]>} - Array of search queries
+ */
+async function generateQueriesWithAI(articleData, apiKey) {
+  const logPrefix = '[Query Agent]';
+  
+  try {
+    console.log(`${logPrefix} Analyzing article to generate intelligent queries...`);
+    
+    // Build prompt
+    const prompt = createQueryGenerationPrompt(articleData);
+    
+    // Create timeout promise (10 seconds max)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('AI query generation timeout')), 10000);
+    });
+    
+    // Call AI with flash-lite for speed
+    const aiResponsePromise = callGemini(
+      apiKey,
+      prompt,
+      0, // thinking budget: 0 (no thinking needed)
+      null, // no abort signal
+      'quick', // fast mode
+      { normalize: false, agentRole: 'queryGenerator' }
+    );
+    
+    // Race between AI call and timeout
+    const aiResponse = await Promise.race([aiResponsePromise, timeoutPromise]);
+    
+    // Validate response exists
+    if (!aiResponse || typeof aiResponse !== 'string') {
+      throw new Error('AI returned empty or invalid response');
+    }
+    
+    // Parse JSON response
+    let queryData;
+    try {
+      // Remove markdown code blocks if present
+      const cleanResponse = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      queryData = JSON.parse(cleanResponse);
+    } catch (parseError) {
+      console.error(`${logPrefix} JSON parse failed:`, parseError);
+      console.error(`${logPrefix} Raw response:`, aiResponse.substring(0, 500));
+      throw new Error('Invalid JSON response from AI');
+    }
+    
+    // Validate response structure
+    if (!queryData.queries || !Array.isArray(queryData.queries)) {
+      throw new Error('AI response missing queries array');
+    }
+    
+    if (queryData.queries.length < 4) {
+      throw new Error(`AI generated too few queries: ${queryData.queries.length}`);
+    }
+    
+    // Sort by priority (high > medium > low)
+    const priorityOrder = { high: 3, medium: 2, low: 1 };
+    queryData.queries.sort((a, b) => {
+      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+    });
+    
+    // Extract just the query strings (limit to 8)
+    const queries = queryData.queries
+      .slice(0, 8)
+      .map(q => q.query)
+      .filter(q => q && typeof q === 'string' && q.trim().length > 0);
+    
+    // Final validation
+    if (queries.length === 0) {
+      throw new Error('No valid queries extracted from AI response');
+    }
+    
+    console.log(`${logPrefix} AI generated ${queries.length} queries`);
+    console.log(`${logPrefix} Article type: ${queryData.article_type || 'Unknown'}`);
+    console.log(`${logPrefix} Strategy: ${queryData.overall_strategy || 'N/A'}`);
+    console.log(`${logPrefix} Key claims: ${queryData.key_claims_identified?.length || 0}`);
+    
+    return queries;
+    
+  } catch (error) {
+    console.error(`${logPrefix} AI query generation failed:`, error.message);
+    console.log(`${logPrefix} Falling back to algorithmic query generation`);
+    return null; // Signal to use fallback
+  }
+}
+
+/**
+ * Generate 6-8 strategic search queries using hybrid heuristics (FALLBACK)
+ * @param {Object} articleData - { title, text, url }
+ * @returns {string[]} - Array of search queries
+ */
+function generateSearchQueriesFallback(articleData) {
+  const queries = [];
+  const { title, text, url } = articleData;
+  
+  // 1. Title entities - Extract key entities from title
+  const titleEntities = extractEntitiesFromText(title);
+  if (titleEntities.length > 0) {
+    queries.push(`${titleEntities.join(' ')} latest news 2025`);
+  }
+  
+  // 2. Topic context - Main topic from title
+  const topic = extractTopicFromTitle(title);
+  if (topic) {
+    queries.push(`${topic} 2025 developments`);
+  }
+  
+  // 3. Numbers/statistics - Find sentences with numbers
+  const statistics = extractStatistics(text);
+  statistics.forEach(stat => {
+    queries.push(`verify ${stat}`);
+  });
+  
+  // 4. Quoted sources - Extract people/orgs mentioned
+  const sources = extractQuotedSources(text);
+  sources.forEach(source => {
+    queries.push(`${source} recent statements 2025`);
+  });
+  
+  // 5. Source credibility - Domain bias rating
+  if (url) {
+    try {
+      const hostname = new URL(url).hostname.replace(/^www\./, '');
+      queries.push(`${hostname} bias rating media bias`);
+    } catch (e) {
+      // Invalid URL, skip
+    }
+  }
+  
+  // 6. Additional context query if we have room
+  if (titleEntities.length > 0 && queries.length < 8) {
+    queries.push(`${titleEntities.join(' ')} expert analysis`);
+  }
+  
+  // Deduplicate and limit to 8
+  const uniqueQueries = [...new Set(queries)];
+  return uniqueQueries.slice(0, 8);
+}
+
+/**
+ * Execute all search queries with Gemini grounding
+ * @param {string[]} queries - Search queries
+ * @param {string} apiKey - Gemini API key
+ * @param {string} analysisDepth - 'quick' or 'deep'
+ * @returns {Object} - { insights: array, citations: array }
+ */
+async function executeGroundedSearches(queries, apiKey, analysisDepth) {
+  const logPrefix = '[Grounding]';
+  const allInsights = [];
+  const allCitations = [];
+  
+  for (let i = 0; i < queries.length; i++) {
+    const query = queries[i];
+    console.log(`${logPrefix} Query ${i + 1}/${queries.length}: ${query}`);
+    
+    try {
+      const result = await callGeminiWithGrounding(query, apiKey, analysisDepth);
+      
+      if (result && result.text) {
+        allInsights.push({
+          query: query,
+          answer: result.text,
+          sources: result.groundingMetadata ? extractCitations(result.groundingMetadata) : []
+        });
+        
+        // Collect citations
+        if (result.groundingMetadata) {
+          const citations = extractCitations(result.groundingMetadata);
+          allCitations.push(...citations);
+          console.log(`${logPrefix} Got ${citations.length} citations from query`);
+        }
+      }
+    } catch (error) {
+      console.warn(`${logPrefix} Query ${i + 1} failed:`, error.message);
+      // Continue to next query
+    }
+  }
+  
+  // Deduplicate citations
+  const uniqueCitations = deduplicateCitations(allCitations);
+  console.log(`${logPrefix} Total citations: ${allCitations.length}, unique: ${uniqueCitations.length}`);
+  
+  return {
+    insights: allInsights,
+    citations: uniqueCitations
+  };
+}
+
+/**
+ * Single Gemini API call with googleSearch tool
+ * @param {string} query - Search query
+ * @param {string} apiKey - Gemini API key
+ * @param {string} analysisDepth - 'quick' or 'deep'
+ * @returns {Object} - { text, groundingMetadata }
+ */
+async function callGeminiWithGrounding(query, apiKey, analysisDepth) {
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+  
+  // Build generation config
+  const generationConfig = {
+    temperature: 0.3,
+    maxOutputTokens: 500
+  };
+  
+  // Add thinking mode for deep analysis
+  if (analysisDepth === 'deep') {
+    generationConfig.thinkingConfig = {
+      enabled: true
+    };
+  }
+  
+  const requestBody = {
+    contents: [{
+      parts: [{
+        text: `Research query: ${query}\n\nProvide a concise, factual answer with current information.`
+      }]
+    }],
+    tools: [{ googleSearch: {} }],
+    generationConfig: generationConfig
+  };
+  
+  const response = await fetch(`${endpoint}?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  }
+  
+  const data = await response.json();
+  
+  // Extract response text and grounding metadata
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const groundingMetadata = data.candidates?.[0]?.groundingMetadata || null;
+  
+  return {
+    text: text,
+    groundingMetadata: groundingMetadata
+  };
+}
+
+/**
+ * Extract citations from Gemini's groundingMetadata
+ * @param {Object} groundingMetadata - Metadata from Gemini response
+ * @returns {Array} - Array of citation objects
+ */
+function extractCitations(groundingMetadata) {
+  const citations = [];
+  
+  if (!groundingMetadata || !groundingMetadata.groundingChunks) {
+    return citations;
+  }
+  
+  let index = 1;
+  for (const chunk of groundingMetadata.groundingChunks) {
+    if (chunk.web) {
+      citations.push({
+        index: index++,
+        title: chunk.web.title || 'Untitled',
+        url: chunk.web.uri || '',
+        snippet: chunk.web.snippet || ''
+      });
+    }
+  }
+  
+  return citations;
+}
+
+/**
+ * Remove duplicate citations by URL
+ * @param {Array} citations - Array of citation objects
+ * @returns {Array} - Deduplicated citations
+ */
+function deduplicateCitations(citations) {
+  const seen = new Set();
+  const unique = [];
+  
+  for (const citation of citations) {
+    if (citation.url && !seen.has(citation.url)) {
+      seen.add(citation.url);
+      // Reassign index after deduplication
+      citation.index = unique.length + 1;
+      unique.push(citation);
+    }
+  }
+  
+  return unique;
+}
+
+/**
+ * Format insights and citations into context text for tribunal
+ * @param {Object} groundedResults - { insights, citations }
+ * @returns {Object} - { contextText, citations, insights }
+ */
+function formatGroundingContext(groundedResults) {
+  const { insights, citations } = groundedResults;
+  
+  let contextText = '--- REAL-TIME GROUNDED CONTEXT (from Google Search) ---\n\n';
+  
+  // Add insights
+  insights.forEach((insight, i) => {
+    contextText += `${i + 1}. ${insight.query}\n`;
+    contextText += `   ${insight.answer}\n`;
+    if (insight.sources && insight.sources.length > 0) {
+      const sourceNames = insight.sources.map(s => s.title).join(', ');
+      contextText += `   Sources: ${sourceNames}\n`;
+    }
+    contextText += '\n';
+  });
+  
+  // Add citations section
+  if (citations.length > 0) {
+    contextText += 'CITATIONS:\n';
+    citations.forEach(citation => {
+      contextText += `[${citation.index}] ${citation.title} - ${citation.url}\n`;
+    });
+    contextText += '\n';
+  }
+  
+  contextText += '--- END GROUNDED CONTEXT ---\n\n';
+  contextText += 'INSTRUCTION: Use the above real-time context to inform your analysis. Reference citations where relevant.\n';
+  
+  return {
+    contextText: contextText,
+    citations: citations,
+    insights: insights
+  };
+}
+
+// Helper functions for query generation
+
+/**
+ * Extract entities from text (capitalized phrases)
+ * @param {string} text - Text to extract from
+ * @returns {string[]} - Array of entity phrases
+ */
+function extractEntitiesFromText(text) {
+  const entities = [];
+  
+  // Match capitalized phrases (2-4 words)
+  const regex = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g;
+  let match;
+  
+  const foundEntities = [];
+  while ((match = regex.exec(text)) !== null) {
+    foundEntities.push(match[1]);
+  }
+  
+  // Count frequency
+  const frequency = {};
+  foundEntities.forEach(entity => {
+    frequency[entity] = (frequency[entity] || 0) + 1;
+  });
+  
+  // Sort by frequency and take top 3
+  const sorted = Object.entries(frequency)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(entry => entry[0]);
+  
+  return sorted;
+}
+
+/**
+ * Extract statistics from text (sentences with numbers)
+ * @param {string} text - Text to extract from
+ * @returns {string[]} - Array of statistic phrases
+ */
+function extractStatistics(text) {
+  const statistics = [];
+  
+  // Split into sentences
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  
+  // Find sentences with numbers or percentages
+  const numberSentences = sentences.filter(sentence => {
+    return /\d+/.test(sentence) && sentence.length < 200;
+  });
+  
+  // Take first 2, truncate to 80 chars
+  return numberSentences
+    .slice(0, 2)
+    .map(s => {
+      const trimmed = s.trim();
+      return trimmed.length > 80 ? trimmed.substring(0, 77) + '...' : trimmed;
+    });
+}
+
+/**
+ * Extract quoted sources from text
+ * @param {string} text - Text to extract from
+ * @returns {string[]} - Array of source names
+ */
+function extractQuotedSources(text) {
+  const sources = [];
+  
+  // Match quoted text with names
+  const quoteRegex = /"([^"]+)"/g;
+  let match;
+  
+  const quotes = [];
+  while ((match = quoteRegex.exec(text)) !== null) {
+    quotes.push(match[1]);
+  }
+  
+  // Look for names near quotes (capitalized words)
+  const nameRegex = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+))\b/g;
+  const names = [];
+  let nameMatch;
+  
+  while ((nameMatch = nameRegex.exec(text)) !== null) {
+    names.push(nameMatch[1]);
+  }
+  
+  // Take first 2 unique names
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.slice(0, 2);
+}
+
+/**
+ * Extract topic from title (remove common words)
+ * @param {string} title - Article title
+ * @returns {string} - Topic keywords
+ */
+function extractTopicFromTitle(title) {
+  const commonWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'has', 'have', 'had', 'will', 'would', 'could', 'should', 'to', 'of', 'in', 'on', 'at', 'for', 'with', 'from', 'by', 'as', 'and', 'or', 'but'];
+  
+  const words = title.toLowerCase().split(/\s+/);
+  const filteredWords = words.filter(word => {
+    return word.length > 2 && !commonWords.includes(word);
+  });
+  
+  // Take 2-4 most significant words
+  return filteredWords.slice(0, 4).join(' ');
+}
+
+// ========== END GROUNDING COORDINATOR ==========
+
+/**
+ * Inject grounding context into agent prompts
+ * @param {string} basePrompt - The agent's base prompt
+ * @param {Object|null} groundingContext - { contextText, citations, insights }
+ * @returns {string} - Modified prompt with grounding injected
+ */
+function injectGroundingIntoPrompt(basePrompt, groundingContext) {
+  // If no grounding context, return original prompt
+  if (!groundingContext || !groundingContext.contextText || typeof groundingContext.contextText !== 'string') {
+    return basePrompt;
+  }
+  
+  // Check if context is meaningful (has citations)
+  if (!groundingContext.citations || groundingContext.citations.length === 0) {
+    return basePrompt;
+  }
+  
+  // Find where to inject context (after system instructions, before article text)
+  // Look for <article_text> tag or similar markers
+  const articleTextMarker = '<article_text>';
+  
+  if (basePrompt.includes(articleTextMarker)) {
+    // Inject BEFORE <article_text> tag
+    return basePrompt.replace(
+      articleTextMarker,
+      `\n${groundingContext.contextText}\n\n${articleTextMarker}`
+    );
+  } else {
+    // If no marker found, prepend to the entire prompt
+    // This ensures context is available even if prompt structure varies
+    return `${groundingContext.contextText}\n\n${basePrompt}`;
+  }
+}
+
 // Enhanced normalize with genre safeguard
 
 function normalizeForRenderer(text, contextJSON = null) {
@@ -820,6 +1480,50 @@ async function handleScanRequest(message, sender, sendResponse) {
 
     });
 
+    // === REAL-TIME GROUNDING COORDINATOR ===
+    // Check if real-time grounding is enabled
+    let groundingContext = null;
+    const realtimeGrounding = message.realtimeGrounding === true;
+    
+    if (realtimeGrounding && apiKey) {
+      bgLog('Real-time grounding enabled, starting coordinator...');
+      
+      // Prepare article data for grounding
+      const articleData = {
+        title: articleContent.title || 'Untitled Article',
+        text: articleContent.fullText,
+        url: articleContent.url || ''
+      };
+      
+      // First attempt
+      try {
+        groundingContext = await coordinateGrounding(articleData, apiKey, analysisDepth, false);
+        
+        if (groundingContext && groundingContext.citations) {
+          bgLog(`[Grounding] Success: ${groundingContext.citations.length} citations collected`);
+        }
+      } catch (error) {
+        bgWarn('[Grounding] First attempt failed, retrying with reduced queries...', error.message);
+        
+        // Retry with reduced queries
+        try {
+          groundingContext = await coordinateGrounding(articleData, apiKey, analysisDepth, true);
+          
+          if (groundingContext && groundingContext.citations) {
+            bgLog(`[Grounding] Retry success: ${groundingContext.citations.length} citations collected`);
+          }
+        } catch (retryError) {
+          bgError('[Grounding] Failed after retry, continuing without grounding:', retryError.message);
+          groundingContext = null;
+        }
+      }
+      
+      if (!groundingContext) {
+        bgWarn('[Grounding] No grounding context available, proceeding with standard analysis');
+      }
+    }
+    // === END REAL-TIME GROUNDING ===
+
     const controller = new AbortController();
 
     if (tabId) {
@@ -836,7 +1540,9 @@ async function handleScanRequest(message, sender, sendResponse) {
 
       analysisDepth,
 
-      controller.signal
+      controller.signal,
+
+      groundingContext
 
     );
 
@@ -847,6 +1553,13 @@ async function handleScanRequest(message, sender, sendResponse) {
     bgLog('Result length:', typeof result === 'string' ? result.length : 'N/A');
 
     bgLog('Result value:', result);
+
+    // Log grounding metadata being sent
+    bgLog('[Background] Saving results with grounding:', {
+      groundingEnabled: result.groundingEnabled,
+      citationCount: result.citations?.length || 0,
+      insightCount: result.groundingInsights?.length || 0
+    });
 
     sendResponse({
 
@@ -1187,7 +1900,14 @@ async function ensureBalancedExamples(elements, sourceText, requestSnippet) {
 }
 
 
-async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal) {
+async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal, groundingContext = null) {
+
+  // Log grounding status
+  const hasGrounding = groundingContext && groundingContext.citations && groundingContext.citations.length > 0;
+  bgLog(`[Tribunal] Starting with grounding: ${hasGrounding}`);
+  if (hasGrounding) {
+    bgLog(`[Tribunal] Injecting grounded context (${groundingContext.citations.length} citations) into agent prompts`);
+  }
 
   // Select appropriate prompt module based on analysis depth
   const Prompts = analysisDepth === 'deep' ? AgentPrompts : QuickPrompts;
@@ -1215,7 +1935,10 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   bgLog('Agent 1: Context analysis...');
 
-  const contextPrompt = Prompts.createContextPrompt(textToAnalyze);
+  const contextPrompt = injectGroundingIntoPrompt(
+    Prompts.createContextPrompt(textToAnalyze),
+    groundingContext
+  );
 
   const contextResponse = await callGemini(apiKey, contextPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'context' });
 
@@ -1239,15 +1962,27 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   bgLog('Agents 2-4: Language, Bias, and Skeptic analysis...');
 
-  const languagePrompt = Prompts.createLanguagePrompt(contextData, textToAnalyze);
+  const languagePrompt = injectGroundingIntoPrompt(
+    Prompts.createLanguagePrompt(contextData, textToAnalyze),
+    groundingContext
+  );
 
-  const hunterPrompt = Prompts.createHunterPrompt(contextData, textToAnalyze);
+  const hunterPrompt = injectGroundingIntoPrompt(
+    Prompts.createHunterPrompt(contextData, textToAnalyze),
+    groundingContext
+  );
 
-  const skepticPrompt = Prompts.createSkepticPrompt(contextData, textToAnalyze);
+  const skepticPrompt = injectGroundingIntoPrompt(
+    Prompts.createSkepticPrompt(contextData, textToAnalyze),
+    groundingContext
+  );
 
   // Quote Agent: extract direct quotes for weighting
 
-  const quotePrompt = Prompts.createQuotePrompt(contextData, textToAnalyze);
+  const quotePrompt = injectGroundingIntoPrompt(
+    Prompts.createQuotePrompt(contextData, textToAnalyze),
+    groundingContext
+  );
 
   // Deep mode: Add 3 specialized agents for comprehensive analysis
 
@@ -1261,11 +1996,20 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
     bgLog('Deep mode: Activating specialized agents');
 
-    sourceDiversityPrompt = AgentPrompts.createSourceDiversityPrompt(textToAnalyze);
+    sourceDiversityPrompt = injectGroundingIntoPrompt(
+      AgentPrompts.createSourceDiversityPrompt(textToAnalyze),
+      groundingContext
+    );
 
-    framingPrompt = AgentPrompts.createFramingPrompt(textToAnalyze);
+    framingPrompt = injectGroundingIntoPrompt(
+      AgentPrompts.createFramingPrompt(textToAnalyze),
+      groundingContext
+    );
 
-    omissionPrompt = AgentPrompts.createOmissionPrompt(contextData, textToAnalyze);
+    omissionPrompt = injectGroundingIntoPrompt(
+      AgentPrompts.createOmissionPrompt(contextData, textToAnalyze),
+      groundingContext
+    );
 
   }
 
@@ -1340,18 +2084,15 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   bgLog('Agent 5: Prosecutor building case...');
 
-  const prosecutorPrompt = Prompts.createProsecutorPrompt(
-
-    contextData,
-
-    languageJSON,
-
-    hunterJSON,
-
-    skepticJSON,
-
-    quoteJSON
-
+  const prosecutorPrompt = injectGroundingIntoPrompt(
+    Prompts.createProsecutorPrompt(
+      contextData,
+      languageJSON,
+      hunterJSON,
+      skepticJSON,
+      quoteJSON
+    ),
+    groundingContext
   );
 
   const prosecutorResponse = await callGemini(apiKey, prosecutorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'prosecutor' });
@@ -1364,28 +2105,24 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   bgLog('Agents 6-7: Defense and Investigator running in parallel...');
 
-  const defensePrompt = Prompts.createDefensePrompt(
-
-    prosecutorJSON,
-
-    contextData,
-
-    languageJSON,
-
-    hunterJSON,
-
-    skepticJSON,
-
-    quoteJSON
-
+  const defensePrompt = injectGroundingIntoPrompt(
+    Prompts.createDefensePrompt(
+      prosecutorJSON,
+      contextData,
+      languageJSON,
+      hunterJSON,
+      skepticJSON,
+      quoteJSON
+    ),
+    groundingContext
   );
 
-  const investigatorPrompt = Prompts.createInvestigatorPrompt(
-
-    prosecutorJSON,
-
-    textToAnalyze
-
+  const investigatorPrompt = injectGroundingIntoPrompt(
+    Prompts.createInvestigatorPrompt(
+      prosecutorJSON,
+      textToAnalyze
+    ),
+    groundingContext
   );
 
   const [defenseResponse, investigatorResponse] = await Promise.all([
@@ -1412,16 +2149,14 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   // Agent 8: Judge - Final adjudication using tribunal debate
 
-  const judgePrompt = Prompts.createJudgePrompt(
-
-    prosecutorJSON,
-
-    defenseJSON,
-
-    investigatorJSON,
-
-    contextData
-
+  const judgePrompt = injectGroundingIntoPrompt(
+    Prompts.createJudgePrompt(
+      prosecutorJSON,
+      defenseJSON,
+      investigatorJSON,
+      contextData
+    ),
+    groundingContext
   );
 
   const judgeResponse = await callGemini(apiKey, judgePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'judge' });
@@ -1452,6 +2187,11 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
   const normalizedText = normalizeForRenderer(judgeResponse, contextJson);
 
+  // Log final grounding status
+  if (hasGrounding) {
+    bgLog(`[Tribunal] Complete with ${groundingContext.citations.length} citations stored`);
+  }
+
   return {
 
     text: normalizedText,
@@ -1480,7 +2220,12 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal)
 
     extractedRating: correctRating,
 
-    extractedConfidence: correctConfidence
+    extractedConfidence: correctConfidence,
+
+    // Include grounding metadata when available
+    groundingEnabled: hasGrounding,
+    citations: hasGrounding ? groundingContext.citations : [],
+    groundingInsights: hasGrounding ? groundingContext.insights : []
 
   };
 }

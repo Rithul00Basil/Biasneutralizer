@@ -765,6 +765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     animationContainer: document.querySelector('#animation-container'),
     detectionHelper: document.querySelector('.detection-helper'),
     privateToggle: document.querySelector('#private-toggle'),
+    realtimeToggle: document.querySelector('#realtime-toggle'),
     statusIcon: document.querySelector('.status-icon'),
     scanButton: document.querySelector('.cta-button'),
     cancelScanButton: document.querySelector('#cancel-scan-button'),
@@ -799,6 +800,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     tipInterval: null,
     currentSession: null,
     timeoutId: null,
+    isPrivateMode: true,
+    isRealtimeGrounding: false,
   };
 
   // ========================================
@@ -1157,6 +1160,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       url: articleInfo.url || '',
       title: articleInfo.title || 'Untitled Article',
       timestamp: finalReportId,
+      // Extract grounding data to top level for easy access
+      groundingEnabled: analysisData?.groundingEnabled || false,
+      citations: analysisData?.citations || [],
+      groundingInsights: analysisData?.groundingInsights || [],
       raw: {
         analysis: analysisData,
         source: source,
@@ -1174,6 +1181,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     spLog('resultToStore.summary type:', typeof resultToStore.summary);
     spLog('resultToStore.summary:', resultToStore.summary);
     spLog('resultToStore.raw:', resultToStore.raw);
+    spLog('[Sidepanel] Grounding data being saved:', {
+      groundingEnabled: resultToStore.groundingEnabled,
+      citationCount: resultToStore.citations?.length || 0,
+      insightCount: resultToStore.groundingInsights?.length || 0
+    });
     spLog('Full resultToStore:', JSON.stringify(resultToStore, null, 2));
 
     // ===== WAIT FOR SUMMARY TO COMPLETE =====
@@ -1751,7 +1763,12 @@ ${contentType} content is evaluated differently than news reporting and does not
     const tabId = tab?.id;
 
     try {
-      chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', tabId, articleContent: articleContent }, async (response) => {
+      chrome.runtime.sendMessage({ 
+        type: 'REQUEST_SCAN', 
+        tabId, 
+        articleContent: articleContent,
+        realtimeGrounding: state.isRealtimeGrounding
+      }, async (response) => {
 
 
         stopStatusUpdates();
@@ -1978,21 +1995,136 @@ ${contentType} content is evaluated differently than news reporting and does not
   // ========================================
   
   /**
+   * Sets up mutual exclusivity between Private Mode and Real-time Grounding toggles
+   */
+  function setupToggleMutualExclusivity() {
+    spLog('Setting up toggle mutual exclusivity');
+
+    if (!elements.privateToggle || !elements.realtimeToggle) {
+      spError('Toggle elements not found');
+      return;
+    }
+
+    // Private Mode toggle handler
+    elements.privateToggle.addEventListener('click', async (event) => {
+      event.preventDefault();
+      
+      // Prevent changes during analysis
+      if (state.isScanning) {
+        showNotification('Cannot change settings during analysis', 'error');
+        return;
+      }
+
+      // Toggle Private Mode
+      const wasPrivate = state.isPrivateMode;
+      state.isPrivateMode = !wasPrivate;
+      
+      // Update UI
+      if (state.isPrivateMode) {
+        elements.privateToggle.classList.add('on');
+      } else {
+        elements.privateToggle.classList.remove('on');
+      }
+      updatePrivateIcon(state.isPrivateMode);
+
+      // If enabling Private Mode while Real-time is ON, disable Real-time
+      if (state.isPrivateMode && state.isRealtimeGrounding) {
+        state.isRealtimeGrounding = false;
+        elements.realtimeToggle.classList.remove('on');
+        showNotification('Real-time grounding disabled (requires Cloud Mode)', 'error');
+      }
+
+      // Save settings
+      await safeStorageSet({
+        privateMode: state.isPrivateMode,
+        isRealtimeGrounding: state.isRealtimeGrounding
+      });
+      
+      spLog('Private Mode toggled:', state.isPrivateMode);
+    });
+
+    // Real-time Grounding toggle handler
+    elements.realtimeToggle.addEventListener('click', async (event) => {
+      event.preventDefault();
+      
+      // Prevent changes during analysis
+      if (state.isScanning) {
+        showNotification('Cannot change settings during analysis', 'error');
+        return;
+      }
+
+      // Toggle Real-time Grounding
+      const wasRealtime = state.isRealtimeGrounding;
+      state.isRealtimeGrounding = !wasRealtime;
+      
+      // Update UI
+      if (state.isRealtimeGrounding) {
+        elements.realtimeToggle.classList.add('on');
+      } else {
+        elements.realtimeToggle.classList.remove('on');
+      }
+
+      // If enabling Real-time while Private Mode is ON, disable Private Mode
+      if (state.isRealtimeGrounding && state.isPrivateMode) {
+        state.isPrivateMode = false;
+        elements.privateToggle.classList.remove('on');
+        updatePrivateIcon(state.isPrivateMode);
+        showNotification('Private mode disabled (Real-time requires Cloud Mode)', 'error');
+      }
+
+      // Show success notification when Real-time is enabled
+      if (state.isRealtimeGrounding) {
+        showNotification('Real-time grounding ON - your analysis will be more accurate!', 'success');
+      }
+
+      // Save settings
+      await safeStorageSet({
+        privateMode: state.isPrivateMode,
+        isRealtimeGrounding: state.isRealtimeGrounding
+      });
+      
+      spLog('Real-time Grounding toggled:', state.isRealtimeGrounding);
+    });
+
+    spLog('Toggle mutual exclusivity ready');
+  }
+
+  /**
    * Initializes panel state on load
    */
   async function initializePanelState() {
     spLog('Initializing panel state');
 
     // Load settings
-    const settings = await safeStorageGet(['privateMode']);
+    const settings = await safeStorageGet(['privateMode', 'isRealtimeGrounding']);
     
     if (settings) {
-      if (settings.privateMode) {
+      // Set default values if not present
+      const privateMode = settings.privateMode !== undefined ? settings.privateMode : true;
+      const realtimeGrounding = settings.isRealtimeGrounding !== undefined ? settings.isRealtimeGrounding : false;
+      
+      // Update state
+      state.isPrivateMode = privateMode;
+      state.isRealtimeGrounding = realtimeGrounding;
+      
+      // Update Private Mode UI
+      if (state.isPrivateMode) {
         elements.privateToggle.classList.add('on');
         spLog('Private mode enabled');
+      } else {
+        elements.privateToggle.classList.remove('on');
+        spLog('Private mode disabled');
       }
-      // Initialize the status icon
-      updatePrivateIcon(!!settings.privateMode);
+      updatePrivateIcon(state.isPrivateMode);
+      
+      // Update Real-time Grounding UI
+      if (state.isRealtimeGrounding) {
+        elements.realtimeToggle.classList.add('on');
+        spLog('Real-time grounding enabled');
+      } else {
+        elements.realtimeToggle.classList.remove('on');
+        spLog('Real-time grounding disabled');
+      }
     }
 
     // Update detection helper with current tab info
@@ -2042,13 +2174,6 @@ ${contentType} content is evaluated differently than news reporting and does not
       if (target.closest('#cancel-scan-button')) {
         event.preventDefault();
         handleCancelScan();
-        return;
-      }
-
-      // Private mode toggle
-      if (target.closest('#private-toggle')) {
-        event.preventDefault();
-        handleToggleClick(elements.privateToggle, 'privateMode');
         return;
       }
 
@@ -2146,6 +2271,7 @@ ${contentType} content is evaluated differently than news reporting and does not
   // ========================================
   
   spLog('Side panel initializing...');
+  setupToggleMutualExclusivity();
   initializePanelState();
   setupEventListeners();
   checkGPU();
