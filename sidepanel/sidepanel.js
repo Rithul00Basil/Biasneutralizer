@@ -4,6 +4,7 @@
  */
 import { AgentPrompts } from '../shared/prompts-deep-cloud.js';
 import { OnDevicePrompts } from '../shared/prompt-quick-ondevice.js';
+import { DeepOnDevicePrompts } from '../shared/prompts-deep-ondevice.js';
 
 const SP_LOG_PREFIX = '[Sidepanel]';
 const spLog = (...args) => console.log(SP_LOG_PREFIX, ...args);
@@ -1597,8 +1598,15 @@ ${contentType} content is evaluated differently than news reporting and does not
       
       spLog('Recomputed source balance:', recomputedBalance);
       
-      // Aggregate all agent results for moderator
+      // Aggregate all agent results for moderator with article context
+      const articleContext = {
+        headline: articleContent.headlines?.[0] || articleContent.title || 'Article',
+        paragraphs_analyzed: articleContent.paragraphs?.length || 0,
+        word_count: fullText.split(/\s+/).length
+      };
+      
       const agentResults = JSON.stringify({
+        article_context: articleContext,
         opinion: opinionJSON,
         political: { 
           ...politicalJSON, 
@@ -1729,6 +1737,217 @@ ${contentType} content is evaluated differently than news reporting and does not
       state.isScanning = false;
       elements.scanButton.disabled = false;
       showNotification(`On-device scan failed: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Deep On-Device Scan with Simplified Tribunal
+   * Uses DeepOnDevicePrompts for more detailed analysis
+   */
+  async function runOnDeviceDeepScan(articleContent, tabId) {
+    if (state.isScanning) {
+      spWarn('On-device deep scan already in progress; skipping new request');
+      return;
+    }
+
+    state.isScanning = true;
+    elements.scanButton.disabled = true;
+    setView('scanning');
+    startStatusUpdates();
+
+    try {
+      const reportId = Date.now();
+      
+      // Trigger background summary
+      triggerOnDeviceSummary(articleContent, reportId);
+      spLog('Background summary generation started for report:', reportId);
+
+      const availability = await window.LanguageModel.availability();
+      if (availability !== 'available') {
+        throw new Error(`On-device AI is not ready. Status: ${availability}`);
+      }
+
+      const session = await window.LanguageModel.create({
+        outputLanguage: 'en'
+      });
+      state.currentSession = session;
+
+      const fullText = (articleContent.fullText || '').replace(/\s+/g, ' ').trim();
+      
+      spLog(`📄 Deep Tribunal Analysis: ${fullText.length} chars`);
+      
+      // ============================================
+      // PHASE 1: CONTEXT + EVIDENCE GATHERING
+      // ============================================
+      
+      // AGENT 1: Context Classifier
+      spLog('Deep Agent 1: Context');
+      const contextPrompt = DeepOnDevicePrompts.createContextPrompt(fullText);
+      const contextRes = await session.prompt(contextPrompt);
+      const contextJSON = parseJSONish(contextRes, { type: 'News', is_opinion_or_analysis: false, confidence: 'Medium' });
+      
+      spLog('Context:', contextJSON);
+      
+      // Handle Opinion/Analysis content (exit early)
+      if (contextJSON.is_opinion_or_analysis) {
+        const contentType = contextJSON.type || 'Opinion';
+        const ratingLabel = 'Unclear';
+        
+        spLog(`${contentType} content detected - returning ${ratingLabel}`);
+        const specialReport = `### Findings
+- **Overall Bias Assessment:** ${ratingLabel}
+- **Confidence:** ${contextJSON.confidence || 'Medium'}
+- **Content Type:** ${contentType}
+
+### ${contentType} Content Detected
+This content was identified as ${contentType.toLowerCase()}.
+
+### Recommendation
+${contentType} content is evaluated differently than news reporting and does not receive a Left/Right/Center bias rating.`;
+        
+        const analysisResult = {
+          text: specialReport,
+          extractedRating: ratingLabel,
+          extractedConfidence: contextJSON.confidence || 'Medium',
+          content_type: contentType
+        };
+        
+        await session.destroy();
+        await saveAnalysisResults(analysisResult, `on-device deep (${contentType.toLowerCase()})`, articleContent, reportId);
+        
+        stopStatusUpdates();
+        setView('default');
+        state.isScanning = false;
+        elements.scanButton.disabled = false;
+        return;
+      }
+      
+      const contextSummary = contextJSON.summary || 'News article analysis';
+      
+      // AGENTS 2-4: Evidence gathering (parallel)
+      spLog('Deep Agents 2-4: Evidence gathering (Language, Hunter, Skeptic)');
+      const [languageRes, hunterRes, skepticRes] = await Promise.all([
+        session.prompt(DeepOnDevicePrompts.createLanguagePrompt(contextSummary, fullText)),
+        session.prompt(DeepOnDevicePrompts.createHunterPrompt(contextSummary, fullText)),
+        session.prompt(DeepOnDevicePrompts.createSkepticPrompt(contextSummary, fullText))
+      ]);
+      
+      const languageJSON = parseJSONish(languageRes, { loaded_phrases: [], neutrality_score: 10, confidence: 'Low' });
+      const hunterJSON = parseJSONish(hunterRes, { bias_indicators: [], overall_bias: 'Center', confidence: 'Low' });
+      const skepticJSON = parseJSONish(skepticRes, { balance_score: 7, balanced_elements: [], confidence: 'Low' });
+      
+      spLog('Evidence gathered:', {
+        language_neutrality: languageJSON.neutrality_score,
+        hunter_bias: hunterJSON.overall_bias,
+        skeptic_balance: skepticJSON.balance_score
+      });
+      
+      // ============================================
+      // PHASE 2: TRIBUNAL DEBATE
+      // ============================================
+      
+      // AGENT 5: Prosecutor
+      spLog('Deep Agent 5: Prosecutor');
+      const prosecutorPrompt = DeepOnDevicePrompts.createProsecutorPrompt(contextSummary, languageJSON, hunterJSON, skepticJSON);
+      const prosecutorRes = await session.prompt(prosecutorPrompt);
+      const prosecutorJSON = parseJSONish(prosecutorRes, { charges: [], prosecution_summary: 'No charges', confidence: 'High' });
+      
+      spLog('Prosecutor:', {
+        charges_filed: prosecutorJSON.charges?.length || 0
+      });
+      
+      // AGENT 6: Defense
+      spLog('Deep Agent 6: Defense');
+      const defensePrompt = DeepOnDevicePrompts.createDefensePrompt(prosecutorJSON, contextSummary, languageJSON, hunterJSON, skepticJSON);
+      const defenseRes = await session.prompt(defensePrompt);
+      const defenseJSON = parseJSONish(defenseRes, { rebuttals: [], defense_summary: 'No rebuttals needed', confidence: 'High' });
+      
+      spLog('Defense:', {
+        rebuttals_provided: defenseJSON.rebuttals?.length || 0
+      });
+      
+      // ============================================
+      // PHASE 3: JUDGE'S VERDICT
+      // ============================================
+      
+      // AGENT 7: Judge
+      spLog('Deep Agent 7: Judge - Final verdict');
+      const judgePrompt = DeepOnDevicePrompts.createJudgePrompt(prosecutorJSON, defenseJSON, contextSummary);
+      const judgeRes = await session.prompt(judgePrompt);
+      
+      // Judge returns markdown, not JSON
+      const finalReportMarkdown = judgeRes;
+      
+      spLog('Tribunal complete:', {
+        reportLength: finalReportMarkdown.length
+      });
+      
+      // Extract rating and confidence
+      const extractedRating = extractRating(finalReportMarkdown);
+      const extractedConfidence = extractConfidence(finalReportMarkdown);
+      
+      spLog('Extracted from deep tribunal:', { extractedRating, extractedConfidence });
+      
+      // Build analysis result with tribunal data
+      const analysisResult = {
+        text: finalReportMarkdown,
+        extractedRating: extractedRating,
+        extractedConfidence: extractedConfidence,
+        // Store tribunal data for results page
+        tribunalDebate: {
+          charges: prosecutorJSON.charges || [],
+          rebuttals: defenseJSON.rebuttals || [],
+          verdicts: [] // Judge's markdown contains verdicts inline
+        },
+        languageAnalysis: languageJSON.loaded_phrases || [],
+        biasIndicators: hunterJSON.bias_indicators || [],
+        balancedElements: skepticJSON.balanced_elements || [],
+        fullAgentData: {
+          context: contextJSON,
+          language: languageJSON,
+          hunter: hunterJSON,
+          skeptic: skepticJSON,
+          prosecutor: prosecutorJSON,
+          defense: defenseJSON
+        }
+      };
+      
+      await session.destroy();
+      
+      // Save results
+      const sourceLabel = 'on-device (deep tribunal)';
+      await saveAnalysisResults(analysisResult, sourceLabel, articleContent, reportId);
+      
+      // Send highlighting data
+      const biasedPhrases = languageJSON.loaded_phrases || [];
+      if (biasedPhrases.length > 0 && tabId) {
+        try {
+          await chrome.tabs.sendMessage(tabId, {
+            type: 'HIGHLIGHT_DATA',
+            biasedPhrases: biasedPhrases,
+            neutralPhrases: []
+          });
+          spLog('Highlight data sent:', { count: biasedPhrases.length });
+        } catch (error) {
+          spWarn('Failed to send highlight data:', error);
+        }
+      }
+      
+      stopStatusUpdates();
+      setView('default');
+      state.isScanning = false;
+      elements.scanButton.disabled = false;
+      
+    } catch (error) {
+      spError("On-device deep scan failed:", error);
+      if (state.currentSession) {
+        try { state.currentSession.destroy(); } catch {}
+      }
+      setView('default');
+      stopStatusUpdates();
+      state.isScanning = false;
+      elements.scanButton.disabled = false;
+      showNotification(`Deep scan failed: ${error.message}`, 'error');
     }
   }
 
@@ -1867,7 +2086,17 @@ ${contentType} content is evaluated differently than news reporting and does not
     }
 
     if (settings.privateMode) {
-      await scanWithOnDeviceAI(articleContent, activeTab.id);
+      // Check analysis depth setting (default to 'quick' if not set)
+      const depthSettings = await safeStorageGet(['analysisDepth']);
+      const analysisDepth = depthSettings?.analysisDepth || 'quick';
+      
+      spLog(`Using on-device mode with ${analysisDepth} analysis`);
+      
+      if (analysisDepth === 'deep') {
+        await runOnDeviceDeepScan(articleContent, activeTab.id);
+      } else {
+        await scanWithOnDeviceAI(articleContent, activeTab.id);
+      }
     } else {
       scanWithCloudAI(articleContent);
     }

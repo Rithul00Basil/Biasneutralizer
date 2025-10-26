@@ -37,7 +37,7 @@ RULES:
 - **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -55,6 +55,8 @@ RULES:
 2. Max 5 phrases total.
 3. Include pejoratives, labels, loaded framing, compound insults, "-baiting", "-warrior", "-ism/-ist", "grievance".
 4. DO NOT invent phrases.
+5. ALWAYS include context_snippet showing 15-30 words surrounding the phrase.
+6. Provide specific neutral_alternative for each phrase.
 
 Output ONLY this exact JSON structure (loaded_phrases: max 5):
 {
@@ -76,7 +78,7 @@ If none found: {"loaded_phrases": [], "overall_lean": "Neutral", "confidence": "
 **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -111,7 +113,7 @@ Output ONLY this exact JSON structure (portrayals: max 4):
 **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -129,6 +131,7 @@ RULES:
 - Count sources in each category.
 - List up to 8 sources with name, lean, and brief quote summary.
 - Verdict based on percentages: All one side -> "One-sided"; >70% one side -> "Favors"; 40-60% each -> "Balanced".
+- CRITICAL: For each source, provide a specific quote_summary showing what they actually said (not just "commented on the issue").
 
 Output ONLY this exact JSON structure (sources_listed: max 8):
 {
@@ -151,7 +154,7 @@ Output ONLY this exact JSON structure (sources_listed: max 8):
 **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -188,7 +191,7 @@ Output ONLY this exact JSON structure (examples: max 3):
 **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -208,6 +211,7 @@ RULES:
 - POOR BALANCE = Late/None placement OR Dismissive/Mocking/Strawman treatment.
 - Determine overall balance verdict (Balanced, Somewhat Balanced, Imbalanced).
 - If Imbalanced, suggest which side the article leans towards based on presented views.
+- CRITICAL: For each counterpoint example, quote the EXACT text from the article (10-20 words).
 
 Output ONLY this exact JSON structure (examples: max 3):
 {
@@ -227,7 +231,7 @@ Output ONLY this exact JSON structure (examples: max 3):
 **ABSOLUTELY NO extra text outside the JSON object.**
 
 <article_text>
-${text.slice(0, 3000)}
+${text.slice(0, 10000)}
 </article_text>
 `,
 
@@ -235,9 +239,11 @@ createConsensusModerator_JSON: (agentResultsJSON) => `**CRITICAL: Return ONLY va
 
 You are the CONSENSUS MODERATOR (Judge). Synthesize the findings from 6 specialist agents provided as JSON input. Output a final structured JSON report.
 
+The agent results include article_context (headline, paragraph count, word count) to help you understand the scope of analysis.
+
 AGENT FINDINGS (Input JSON):
 ${agentResultsJSON} 
-// Note: In practice, sidepanel.js will stringify the collected JSON results here.
+// Note: In practice, sidepanel.js will stringify the collected JSON results here including article metadata.
 
 CRITICAL DECISION PROCESS:
 
@@ -252,8 +258,11 @@ CRITICAL DECISION PROCESS:
    - Determine Confidence ('High', 'Medium', 'Low') based on agreement level and individual agent confidences.
 
 4. EXTRACT KEY EVIDENCE:
-   - Select the 1-3 most significant Biased Phrases from the Political Language agent's 'loaded_phrases'.
-   - Select the 1-3 most significant Neutral Elements from the Counterpoint Checker ('examples' if fair/early) and Source Balance ('sources_listed' if balanced).
+   - CRITICAL: Copy EXACT phrases from Political Language agent's 'loaded_phrases' array. DO NOT summarize or paraphrase.
+   - For biased_language_examples: Extract phrase, explanation, and direction fields VERBATIM from the agent's output.
+   - CRITICAL: Copy EXACT descriptions from Counterpoint Checker's 'examples' array or Source Balance's 'sources_listed' array.
+   - For neutral_elements_examples: Extract specific text from agents, not generic descriptions.
+   - If agents provided empty arrays, leave these fields as empty arrays (do not invent examples).
 
 5. FORMULATE KEY OBSERVATION:
    - Write a concise (1-2 sentences) summary explaining the main factors driving the overall rating.
