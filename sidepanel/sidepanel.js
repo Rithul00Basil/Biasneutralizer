@@ -765,6 +765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     animationContainer: document.querySelector('#animation-container'),
     detectionHelper: document.querySelector('.detection-helper'),
     privateToggle: document.querySelector('#private-toggle'),
+    statusIcon: document.querySelector('.status-icon'),
     scanButton: document.querySelector('.cta-button'),
     cancelScanButton: document.querySelector('#cancel-scan-button'),
     statusText: document.querySelector('#scan-status-text'),
@@ -953,6 +954,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     primaryBtn.onclick = () => {
       chrome.storage.local.set({ privateMode: false, gpuWarningDismissed: true }, () => {
         elements?.privateToggle?.classList.remove('on');
+        try { updatePrivateIcon(false); } catch (e) { /* no-op */ }
         showNotification('Switched to Cloud AI', 'success');
         close();
       });
@@ -1927,7 +1929,31 @@ ${contentType} content is evaluated differently than news reporting and does not
       // Revert toggle if storage failed
       toggleElement.classList.toggle('on');
       showError('Failed to save setting.', 'Please try again.');
+      return;
     }
+
+    // Side effects for specific toggles
+    if (storageKey === 'privateMode') {
+      updatePrivateIcon(isNowOn);
+    }
+  }
+
+  /**
+   * Updates the Private Mode status icon with a small fade transition
+   * @param {boolean} isPrivate - true -> 🔒, false -> 🌐
+   */
+  function updatePrivateIcon(isPrivate) {
+    if (!elements.statusIcon) return;
+    const el = elements.statusIcon;
+    // graceful fade-out, swap, fade-in
+    el.style.transition = el.style.transition || 'opacity 160ms ease, transform 160ms ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-2px)';
+    setTimeout(() => {
+      el.textContent = isPrivate ? '🔒' : '🌐';
+      el.style.transform = 'translateY(0)';
+      el.style.opacity = '1';
+    }, 120);
   }
 
   /**
@@ -1965,6 +1991,8 @@ ${contentType} content is evaluated differently than news reporting and does not
         elements.privateToggle.classList.add('on');
         spLog('Private mode enabled');
       }
+      // Initialize the status icon
+      updatePrivateIcon(!!settings.privateMode);
     }
 
     // Update detection helper with current tab info
