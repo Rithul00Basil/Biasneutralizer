@@ -717,6 +717,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const CONSTANTS = {
     FADE_DURATION_MS: 400,
     MESSAGE_INTERVAL_MS: 2500,
+    TIP_INTERVAL_MS: 30000,
     MIN_ARTICLE_LENGTH: 100,
     MAX_PARAGRAPHS_TO_ANALYZE: 10,
   };
@@ -732,6 +733,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     "Finalizing comprehensive bias report..."
   ];
 
+  // Helpful tips displayed during scanning
+  const SCAN_TIPS = [
+    "Switch to Quick Analysis for faster checks.",
+    "Deep Analysis compares more context and sources.",
+    "Enable Cloud AI to run Deep Analysis.",
+    "Use On-Device mode to keep your text private.",
+    "Cloud AI processes snippets; full articles aren’t stored.",
+    "Open the Reports page to review past scans.",
+    "Click a report to view bias categories and examples.",
+    "Bias ratings reflect language and framing, not facts.",
+    "Neutralization rewrites biased wording on-device.",
+    "Toggle Neutralization in Settings for clearer text.",
+    "Visit Help to learn bias categories and scores.",
+    "Adjust sensitivity levels in Settings to your preference.",
+    "Quick Analysis runs fully on your device.",
+    "Export summaries to share reports without article content.",
+    "Combine Deep Analysis with Neutralization for clarity.",
+    "Open Settings to switch analysis modes anytime.",
+    "Reports highlight bias trends over time.",
+    "Disable Cloud processing in Settings at any time.",
+    "Hover the badge to see a quick bias summary.",
+    "Access Help for tutorials, FAQs, and privacy info."
+  ];
+
   // ========================================
   // DOM ELEMENTS
   // ========================================
@@ -743,6 +768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     scanButton: document.querySelector('.cta-button'),
     cancelScanButton: document.querySelector('#cancel-scan-button'),
     statusText: document.querySelector('#scan-status-text'),
+    scanTipText: document.querySelector('#scan-tip-text'),
     settingsButton: document.querySelector('#settings-button'),
     viewResultsButton: document.getElementById('view-results-button'),
     resultsModalContainer: document.getElementById('results-modal-container'),
@@ -769,6 +795,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let state = {
     isScanning: false,
     statusInterval: null,
+    tipInterval: null,
     currentSession: null,
     timeoutId: null,
   };
@@ -1025,7 +1052,9 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function startStatusUpdates() {
     let messageIndex = 0;
+    let lastTipIndex = -1;
     const messages = SCAN_MESSAGES.length ? SCAN_MESSAGES : ["Analyzing article..."];
+    const tips = SCAN_TIPS.length ? SCAN_TIPS : ["Check Reports to review past scans."];
 
     function updateMessage() {
       const currentMessage = messages[messageIndex % messages.length];
@@ -1039,9 +1068,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       messageIndex++;
     }
-    
+
+    function updateTip() {
+      if (!elements.scanTipText) return;
+      const chooseIndex = () => {
+        if (tips.length <= 1) return 0;
+        let idx;
+        do { idx = Math.floor(Math.random() * tips.length); } while (idx === lastTipIndex);
+        return idx;
+      };
+      const nextIndex = chooseIndex();
+      const currentTip = tips[nextIndex];
+      elements.scanTipText.classList.add('exiting');
+      setTimeout(() => {
+        elements.scanTipText.textContent = `Tip: ${currentTip}`;
+        elements.scanTipText.classList.remove('exiting');
+      }, CONSTANTS.FADE_DURATION_MS);
+      lastTipIndex = nextIndex;
+    }
+
+    // Prime both immediately
     updateMessage();
+    updateTip();
+    // Run on separate intervals: frequent status, slow tips
     state.statusInterval = setInterval(updateMessage, CONSTANTS.MESSAGE_INTERVAL_MS);
+    state.tipInterval = setInterval(updateTip, CONSTANTS.TIP_INTERVAL_MS);
   }
 
   /**
@@ -1051,6 +1102,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.statusInterval) {
       clearInterval(state.statusInterval);
       state.statusInterval = null;
+    }
+    if (state.tipInterval) {
+      clearInterval(state.tipInterval);
+      state.tipInterval = null;
     }
   }
 

@@ -1709,6 +1709,30 @@ body {
   animation: slideOutUp 0.35s forwards;
 }
 
+/* Tip text shown during scanning */
+.scan-tip {
+  position: absolute;
+  bottom: 1.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 85%;
+  color: var(--text-white-80);
+  font-family: var(--font-inter);
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  text-align: center;
+  line-height: 1.3;
+  opacity: 1;
+  transition: opacity 0.4s ease;
+  z-index: 120;
+}
+
+.scan-tip.exiting {
+  opacity: 0;
+}
+
 @keyframes statusPulse {
   0%, 100% {
     opacity: 0.85;
