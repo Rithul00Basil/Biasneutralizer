@@ -458,13 +458,14 @@ async function executeGroundedSearches(queries, apiKey, analysisDepth) {
 }
 
 /**
- * Single Gemini API call with googleSearch tool
+ * Single Gemini API call with google_search tool
  * @param {string} query - Search query
  * @param {string} apiKey - Gemini API key
  * @param {string} analysisDepth - 'quick' or 'deep'
  * @returns {Object} - { text, groundingMetadata }
  */
 async function callGeminiWithGrounding(query, apiKey, analysisDepth) {
+  const logPrefix = '[Grounding]';
   const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   
   // Build generation config
@@ -473,10 +474,10 @@ async function callGeminiWithGrounding(query, apiKey, analysisDepth) {
     maxOutputTokens: 500
   };
   
-  // Add thinking mode for deep analysis
+  // Add thinking budget for deep analysis (use thinkingBudget, not enabled)
   if (analysisDepth === 'deep') {
     generationConfig.thinkingConfig = {
-      enabled: true
+      thinkingBudget: -1  // -1 means unlimited thinking for deep analysis
     };
   }
   
@@ -486,33 +487,73 @@ async function callGeminiWithGrounding(query, apiKey, analysisDepth) {
         text: `Research query: ${query}\n\nProvide a concise, factual answer with current information.`
       }]
     }],
-    tools: [{ googleSearch: {} }],
+    tools: [{ google_search: {} }],  // Fixed: use snake_case for REST API
     generationConfig: generationConfig
   };
   
-  const response = await fetch(`${endpoint}?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(requestBody)
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  // First attempt with thinkingConfig (if deep mode)
+  try {
+    const response = await fetch(`${endpoint}?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      
+      // Check if this is a thinkingConfig error and we haven't retried yet
+      if (response.status === 400 && /thinking_config/i.test(errorText) && analysisDepth === 'deep') {
+        console.log(`${logPrefix} Retrying without thinkingConfig due to 400 error`);
+        
+        // Remove thinkingConfig and retry
+        delete requestBody.generationConfig.thinkingConfig;
+        
+        const retryResponse = await fetch(`${endpoint}?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        if (!retryResponse.ok) {
+          const retryErrorText = await retryResponse.text();
+          throw new Error(`Gemini API error: ${retryResponse.status} - ${retryErrorText}`);
+        }
+        
+        const retryData = await retryResponse.json();
+        const text = retryData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const groundingMetadata = retryData.candidates?.[0]?.groundingMetadata || null;
+        
+        return {
+          text: text,
+          groundingMetadata: groundingMetadata
+        };
+      }
+      
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Extract response text and grounding metadata
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const groundingMetadata = data.candidates?.[0]?.groundingMetadata || null;
+    
+    return {
+      text: text,
+      groundingMetadata: groundingMetadata
+    };
+  } catch (error) {
+    // If it's a network error or other non-400 error, propagate it
+    if (error.message && !error.message.includes('Gemini API error')) {
+      throw new Error(`Gemini grounding request failed: ${error.message}`);
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  
-  // Extract response text and grounding metadata
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  const groundingMetadata = data.candidates?.[0]?.groundingMetadata || null;
-  
-  return {
-    text: text,
-    groundingMetadata: groundingMetadata
-  };
 }
 
 /**
