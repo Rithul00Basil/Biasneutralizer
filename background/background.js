@@ -445,6 +445,12 @@ async function executeGroundedSearches(queries, apiKey, analysisDepth) {
       console.warn(`${logPrefix} Query ${i + 1} failed:`, error.message);
       // Continue to next query
     }
+    
+    // Add 1-second delay between each query
+    if (i < queries.length - 1) {
+      console.log(`${logPrefix} Waiting 1 second before next query...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
   
   // Deduplicate citations
@@ -1614,6 +1620,13 @@ async function handleScanRequest(message, sender, sendResponse) {
       }
     }
     // === END REAL-TIME GROUNDING ===
+
+    // Add 7-second delay after grounding completes before proceeding to analysis agents
+    if (realtimeGrounding) {
+      bgLog('[Grounding] Waiting 7 seconds before proceeding to analysis agents...');
+      await new Promise(resolve => setTimeout(resolve, 7000));
+      bgLog('[Grounding] Proceeding to analysis agents');
+    }
 
     const controller = new AbortController();
 
