@@ -285,7 +285,7 @@
       };
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: {
@@ -307,6 +307,7 @@
         }
       } else if (response.status === 400) {
         const errorData = await response.json();
+        console.error('API 400 Error:', errorData);
         return {
           success: false,
           error: errorData.error?.message || 'Invalid API key format'
@@ -316,7 +317,14 @@
           success: false,
           error: 'API key access denied. Check your key permissions.'
         };
+      } else if (response.status === 404) {
+        return {
+          success: false,
+          error: 'Model not found. The API endpoint may have changed.'
+        };
       } else {
+        const errorText = await response.text();
+        console.error(`API ${response.status} Error:`, errorText);
         return {
           success: false,
           error: `API returned status ${response.status}`

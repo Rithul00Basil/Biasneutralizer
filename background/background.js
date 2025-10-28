@@ -446,9 +446,9 @@ async function executeGroundedSearches(queries, apiKey, analysisDepth) {
       // Continue to next query
     }
     
-    // Add 1-second delay between each query
-    if (i < queries.length - 1) {
-      console.log(`${logPrefix} Waiting 1 second before next query...`);
+    // Add 1-second delay between each query (only in deep mode for rate limiting)
+    if (i < queries.length - 1 && analysisDepth === 'deep') {
+      console.log(`${logPrefix} [Deep Mode] Waiting 1 second before next query...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
@@ -1286,6 +1286,12 @@ async function callGemini(apiKey, prompt, thinkingBudget, signal, analysisDepth,
           });
         } catch {}
 
+        // Add 1-second delay for Gemini 2.5 models (rate limiting)
+        if (model.includes('2.5')) {
+          bgLog(`Rate limiting: Waiting 1 second after ${model} call`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
         return normalize ? normalizeForRenderer(text) : text;
 
       } catch (err) {
@@ -1621,11 +1627,11 @@ async function handleScanRequest(message, sender, sendResponse) {
     }
     // === END REAL-TIME GROUNDING ===
 
-    // Add 7-second delay after grounding completes before proceeding to analysis agents
-    if (realtimeGrounding) {
-      bgLog('[Grounding] Waiting 7 seconds before proceeding to analysis agents...');
+    // Add 7-second delay after grounding completes before proceeding to analysis agents (only in deep mode)
+    if (realtimeGrounding && analysisDepth === 'deep') {
+      bgLog('[Grounding] [Deep Mode] Waiting 7 seconds before proceeding to analysis agents...');
       await new Promise(resolve => setTimeout(resolve, 7000));
-      bgLog('[Grounding] Proceeding to analysis agents');
+      bgLog('[Grounding] [Deep Mode] Proceeding to analysis agents');
     }
 
     const controller = new AbortController();
@@ -2117,19 +2123,36 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal,
 
   }
 
-  // Execute agents in parallel for better performance
+  // Execute agents with staggered delays for deep mode (2.5-pro) to prevent rate limiting
+  let quoteResponse, languageResponse, hunterResponse, skepticResponse;
 
-  const [quoteResponse, languageResponse, hunterResponse, skepticResponse] = await Promise.all([
-
-    callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'quote' }),
-
-    callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'language' }),
-
-    callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'hunter' }),
-
-    callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'skeptic' })
-
-  ]);
+  if (analysisDepth === 'deep') {
+    bgLog('Deep mode: Starting agents with 2-second delays between calls...');
+    
+    quoteResponse = await callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'quote' });
+    bgLog('Quote agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    languageResponse = await callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'language' });
+    bgLog('Language agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    hunterResponse = await callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'hunter' });
+    bgLog('Hunter agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    skepticResponse = await callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'skeptic' });
+    bgLog('Skeptic agent complete');
+  } else {
+    // Quick mode: Execute in parallel (no rate limit issues with flash models)
+    bgLog('Quick mode: Executing agents in parallel...');
+    [quoteResponse, languageResponse, hunterResponse, skepticResponse] = await Promise.all([
+      callGemini(apiKey, quotePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'quote' }),
+      callGemini(apiKey, languagePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'language' }),
+      callGemini(apiKey, hunterPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'hunter' }),
+      callGemini(apiKey, skepticPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'skeptic' })
+    ]);
+  }
 
   const languageJSON = safeJSON(languageResponse, { loaded_phrases: [], neutrality_score: 10, confidence: 'High' });
 
@@ -2162,19 +2185,19 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal,
 
   if (analysisDepth === 'deep') {
 
-    bgLog('Executing deep analysis agents...');
+    bgLog('Executing deep analysis specialized agents with delays...');
 
-    [sourceDiversityResponse, framingResponse, omissionResponse] = await Promise.all([
+    sourceDiversityResponse = await callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'sourceDiversity' });
+    bgLog('Source Diversity agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-      callGemini(apiKey, sourceDiversityPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'sourceDiversity' }),
+    framingResponse = await callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'framing' });
+    bgLog('Framing agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-      callGemini(apiKey, framingPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'framing' }),
+    omissionResponse = await callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'omission' });
 
-      callGemini(apiKey, omissionPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'omission' })
-
-    ]);
-
-    bgLog('Deep analysis agents complete');
+    bgLog('Deep analysis specialized agents complete');
 
   }
 
@@ -2205,9 +2228,7 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal,
 
   bgLog('Prosecutor complete. Charges filed:', prosecutorJSON.charges?.length || 0);
 
-  // Agent 2 & 3: Defense and Investigator run in parallel
-
-  bgLog('Agents 6-7: Defense and Investigator running in parallel...');
+  // Agent 2 & 3: Defense and Investigator
 
   const defensePrompt = injectGroundingIntoPrompt(
     Prompts.createDefensePrompt(
@@ -2229,13 +2250,23 @@ async function performMultiAgentScan(articleText, apiKey, analysisDepth, signal,
     groundingContext
   );
 
-  const [defenseResponse, investigatorResponse] = await Promise.all([
+  let defenseResponse, investigatorResponse;
 
-    callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'defense' }),
-
-    callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'investigator' })
-
-  ]);
+  if (analysisDepth === 'deep') {
+    bgLog('Agents 6-7: Defense and Investigator with delays...');
+    
+    defenseResponse = await callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'defense' });
+    bgLog('Defense agent complete, waiting 2 seconds...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    investigatorResponse = await callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'investigator' });
+  } else {
+    bgLog('Agents 6-7: Defense and Investigator running in parallel...');
+    [defenseResponse, investigatorResponse] = await Promise.all([
+      callGemini(apiKey, defensePrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'defense' }),
+      callGemini(apiKey, investigatorPrompt, thinkingBudget, signal, analysisDepth, { normalize: false, agentRole: 'investigator' })
+    ]);
+  }
 
   const defenseJSON = safeJSON(defenseResponse, { rebuttals: [], defense_summary: 'No rebuttals needed.', confidence: 'High' });
 
